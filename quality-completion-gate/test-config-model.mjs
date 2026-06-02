@@ -9,6 +9,12 @@ import {
 
 const config = JSON.parse(readFileSync('E:/hooks/config.json', 'utf8'));
 
+function hookById(source, id) {
+  const hook = source.hooks.find((entry) => entry.id === id);
+  assert.ok(hook, `${id} hook must be present`);
+  return hook;
+}
+
 const current = validateConfig(config);
 assert.deepEqual(current.errors, [], current.errors.join('\n'));
 
@@ -52,9 +58,32 @@ assert.ok(
   'skill scoring signal weights must sum to 1.0'
 );
 
+const badComplexScript = structuredClone(config);
+hookById(badComplexScript, 'inject-protocol-complex').script.path = 'inject-protocol/inject-protocol.mjs';
+const badComplexScriptResult = validateConfig(badComplexScript);
+assert.ok(
+  badComplexScriptResult.errors.some((error) => error.includes('inject-protocol-complex.script.path mismatch')),
+  'inject-protocol-complex script path must be semantically validated'
+);
+
+const badMemoryNormalizerWrite = structuredClone(config);
+hookById(badMemoryNormalizerWrite, 'memory-normalizer').settings.writes.contentMutation = true;
+const badMemoryNormalizerWriteResult = validateConfig(badMemoryNormalizerWrite);
+assert.ok(
+  badMemoryNormalizerWriteResult.errors.some((error) => error.includes('memory-normalizer settings.writes.contentMutation must be false')),
+  'memory-normalizer must reject content mutation settings'
+);
+
+const badQualityAuthority = structuredClone(config);
+hookById(badQualityAuthority, 'quality-completion-gate').settings.authority = 'assistant-claims';
+const badQualityAuthorityResult = validateConfig(badQualityAuthority);
+assert.ok(
+  badQualityAuthorityResult.errors.some((error) => error.includes('quality-completion-gate settings.authority must be exit-codes-only')),
+  'quality-completion-gate authority must remain exit-code based'
+);
+
 const badThinkingTools = structuredClone(config);
-const thinkingGate = badThinkingTools.hooks.find((hook) => hook.id === 'thinking-gate');
-assert.ok(thinkingGate, 'thinking-gate hook must be present');
+const thinkingGate = hookById(badThinkingTools, 'thinking-gate');
 assert.equal(thinkingGate.settings.toolClasses, undefined, 'thinking-gate must not define toolClasses');
 assert.equal(thinkingGate.settings.readOnlyShellPrefixes, undefined, 'thinking-gate must not define readOnlyShellPrefixes');
 assert.equal(thinkingGate.settings.grantPolicy.consumeReadOnly, undefined, 'thinking-gate must not define read-only grant exemptions');
@@ -66,7 +95,7 @@ assert.ok(
 );
 
 const badThinkingConsumptionTable = structuredClone(config);
-badThinkingConsumptionTable.hooks.find((hook) => hook.id === 'thinking-gate').settings.consumptionTable = 'bad-table-name';
+hookById(badThinkingConsumptionTable, 'thinking-gate').settings.consumptionTable = 'bad-table-name';
 const badThinkingConsumptionTableResult = validateConfig(badThinkingConsumptionTable);
 assert.ok(
   badThinkingConsumptionTableResult.errors.some((error) => error.includes('thinking-gate settings.consumptionTable')),
@@ -74,7 +103,7 @@ assert.ok(
 );
 
 const badThinkingBootstrap = structuredClone(config);
-badThinkingBootstrap.hooks.find((hook) => hook.id === 'thinking-gate').settings.bootstrapTools.ToolSearch = [];
+hookById(badThinkingBootstrap, 'thinking-gate').settings.bootstrapTools.ToolSearch = [];
 const badThinkingBootstrapResult = validateConfig(badThinkingBootstrap);
 assert.ok(
   badThinkingBootstrapResult.errors.some((error) => error.includes('thinking-gate settings.bootstrapTools')),
@@ -82,7 +111,7 @@ assert.ok(
 );
 
 const badThinkingGrant = structuredClone(config);
-badThinkingGrant.hooks.find((hook) => hook.id === 'thinking-gate').settings.grantPolicy.maxToolUses = 0;
+hookById(badThinkingGrant, 'thinking-gate').settings.grantPolicy.maxToolUses = 0;
 const badThinkingGrantResult = validateConfig(badThinkingGrant);
 assert.ok(
   badThinkingGrantResult.errors.some((error) => error.includes('thinking-gate settings.grantPolicy.maxToolUses')),
@@ -90,7 +119,7 @@ assert.ok(
 );
 
 const badThinkingToolClass = structuredClone(config);
-badThinkingToolClass.hooks.find((hook) => hook.id === 'thinking-gate').settings.toolClasses = { readOnly: ['Read'] };
+hookById(badThinkingToolClass, 'thinking-gate').settings.toolClasses = { readOnly: ['Read'] };
 const badThinkingToolClassResult = validateConfig(badThinkingToolClass);
 assert.ok(
   badThinkingToolClassResult.errors.some((error) => error.includes('thinking-gate settings.toolClasses is not supported')),
@@ -98,7 +127,7 @@ assert.ok(
 );
 
 const badReadOnlyPolicy = structuredClone(config);
-badReadOnlyPolicy.hooks.find((hook) => hook.id === 'thinking-gate').settings.grantPolicy.consumeReadOnly = false;
+hookById(badReadOnlyPolicy, 'thinking-gate').settings.grantPolicy.consumeReadOnly = false;
 const badReadOnlyPolicyResult = validateConfig(badReadOnlyPolicy);
 assert.ok(
   badReadOnlyPolicyResult.errors.some((error) => error.includes('thinking-gate settings.grantPolicy.consumeReadOnly is not supported')),

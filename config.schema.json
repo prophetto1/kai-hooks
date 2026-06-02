@@ -294,7 +294,10 @@
           "if": {
             "properties": {
               "id": {
-                "const": "inject-protocol"
+                "enum": [
+                  "inject-protocol",
+                  "inject-protocol-complex"
+                ]
               }
             }
           },

@@ -119,7 +119,7 @@ function definitions() {
       },
       allOf: [
         {
-          if: { properties: { id: { const: 'inject-protocol' } } },
+          if: { properties: { id: { enum: ['inject-protocol', 'inject-protocol-complex'] } } },
           then: { properties: { settings: ref('injectSettings') } },
         },
       ],
@@ -570,6 +570,50 @@ function validateInjectProtocol(config, errors) {
   pushIf(errors, isObject(skills.explain), 'skills.explain missing');
 }
 
+function validateInjectProtocolComplex(config, errors) {
+  const hook = hookById(config, 'inject-protocol-complex');
+  pushIf(errors, isObject(hook), 'missing hooks[id=inject-protocol-complex]');
+  if (!isObject(hook)) return;
+
+  const settings = hook.settings || {};
+  const sources = settings.sources || {};
+  const memory = sources.memory || {};
+  const skills = sources.skills || {};
+
+  pushIf(errors, hook.event === 'UserPromptSubmit', 'inject-protocol-complex.event must be UserPromptSubmit');
+  pushIf(errors, hook.script?.path === 'inject-protocol-complex/inject-protocol-complex.mjs', 'inject-protocol-complex.script.path mismatch');
+  pushIf(errors, typeof sources.protocol?.file === 'string', 'inject-protocol-complex sources.protocol.file missing');
+  pushIf(errors, positiveInteger(settings.terms?.minLen), 'inject-protocol-complex terms.minLen invalid');
+  pushIf(errors, positiveInteger(settings.terms?.max), 'inject-protocol-complex terms.max invalid');
+  pushIf(errors, Number.isInteger(settings.terms?.contextPrompts) && settings.terms.contextPrompts >= 0, 'inject-protocol-complex terms.contextPrompts invalid');
+  pushIf(errors, typeof settings.terms?.tokenCharClass === 'string' && settings.terms.tokenCharClass.length > 0, 'inject-protocol-complex terms.tokenCharClass invalid');
+  pushIf(errors, TOKENIZER_CONFIG.allowedFlags.includes(settings.terms?.tokenRegexFlags), 'inject-protocol-complex terms.tokenRegexFlags invalid');
+  pushIf(errors, validTokenRegex(settings.terms), 'inject-protocol-complex token regex invalid');
+  pushIf(errors, positiveInteger(settings.output?.capChars), 'inject-protocol-complex output.capChars invalid');
+  pushIf(errors, typeof settings.output?.labels?.skills === 'string', 'inject-protocol-complex output.labels.skills missing');
+  pushIf(errors, typeof settings.output?.labels?.memory === 'string', 'inject-protocol-complex output.labels.memory missing');
+
+  pushIf(errors, identifier(memory.ftsTable), 'inject-protocol-complex memory.ftsTable must be a SQL identifier');
+  pushIf(errors, identifier(memory.joinTable), 'inject-protocol-complex memory.joinTable must be a SQL identifier');
+  pushIf(errors, Array.isArray(memory.filters) && memory.filters.every((filter) => (
+    isObject(filter) && MEMORY_FILTER_IDS.includes(filter.id)
+  )), `inject-protocol-complex memory.filters must use allowlisted ids: ${MEMORY_FILTER_IDS.join(', ')}`);
+  pushIf(errors, positiveInteger(memory.max), 'inject-protocol-complex memory.max invalid');
+  pushIf(errors, positiveInteger(memory.snippetChars), 'inject-protocol-complex memory.snippetChars invalid');
+  pushIf(errors, positiveInteger(memory.minTerms), 'inject-protocol-complex memory.minTerms invalid');
+  pushIf(errors, positiveInteger(memory.candidatePool), 'inject-protocol-complex memory.candidatePool invalid');
+  validateMemoryScoring(errors, memory.scoring);
+  pushIf(errors, isObject(memory.explain), 'inject-protocol-complex memory.explain missing');
+
+  pushIf(errors, identifier(skills.ftsTable), 'inject-protocol-complex skills.ftsTable must be a SQL identifier');
+  pushIf(errors, identifier(skills.joinTable), 'inject-protocol-complex skills.joinTable must be a SQL identifier');
+  pushIf(errors, positiveInteger(skills.max), 'inject-protocol-complex skills.max invalid');
+  pushIf(errors, positiveInteger(skills.candidatePool), 'inject-protocol-complex skills.candidatePool invalid');
+  validateSkillsScoring(errors, skills.scoring);
+  pushIf(errors, Array.isArray(skills.noiseTerms), 'inject-protocol-complex skills.noiseTerms must be an array');
+  pushIf(errors, isObject(skills.explain), 'inject-protocol-complex skills.explain missing');
+}
+
 function validateSkillIndexer(config, errors) {
   const script = scriptById(config, 'skill-indexer');
   pushIf(errors, isObject(script), 'missing scripts[id=skill-indexer]');
@@ -594,6 +638,27 @@ function validateTelemetry(config, errors) {
   pushIf(errors, Number.isInteger(s.retentionDays) && s.retentionDays >= 0, 'hook-telemetry settings.retentionDays must be an integer >= 0');
   pushIf(errors, positiveInteger(s.detailMaxChars), 'hook-telemetry settings.detailMaxChars invalid');
   pushIf(errors, positiveInteger(s.retentionPruneEvery), 'hook-telemetry settings.retentionPruneEvery invalid');
+}
+
+function validateMemoryNormalizer(config, errors) {
+  const hook = hookById(config, 'memory-normalizer');
+  pushIf(errors, isObject(hook), 'missing hooks[id=memory-normalizer]');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'PostToolUse', 'memory-normalizer.event must be PostToolUse');
+  pushIf(errors, hook.script?.path === 'memory-normalizer/normalize-after-store.py', 'memory-normalizer.script.path mismatch');
+  const s = hook.settings || {};
+  pushIf(errors, identifier(s.table), 'memory-normalizer settings.table must be a SQL identifier');
+  pushIf(errors, identifier(s.auditTable), 'memory-normalizer settings.auditTable must be a SQL identifier');
+  pushIf(errors, positiveInteger(s.detailMaxChars), 'memory-normalizer settings.detailMaxChars invalid');
+  pushIf(errors, nonEmptyStringArray(s.sourceTools), 'memory-normalizer settings.sourceTools must be a non-empty string array');
+  pushIf(errors, isObject(s.writes), 'memory-normalizer settings.writes must be an object');
+  if (isObject(s.writes)) {
+    pushIf(errors, identifier(s.writes.memoryTable), 'memory-normalizer settings.writes.memoryTable must be a SQL identifier');
+    pushIf(errors, nonEmptyStringArray(s.writes.columns), 'memory-normalizer settings.writes.columns must be a non-empty string array');
+    pushIf(errors, s.writes.contentMutation === false, 'memory-normalizer settings.writes.contentMutation must be false');
+    pushIf(errors, s.writes.vectorMutation === false, 'memory-normalizer settings.writes.vectorMutation must be false');
+    pushIf(errors, s.writes.ftsMutation === false, 'memory-normalizer settings.writes.ftsMutation must be false');
+  }
 }
 
 function validateLoopSafety(config, errors) {
@@ -653,13 +718,29 @@ function validateThinkingGate(config, errors) {
   pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'thinking-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
 }
 
+function validateQualityCompletionGate(config, errors) {
+  const hook = hookById(config, 'quality-completion-gate');
+  pushIf(errors, isObject(hook), 'missing hooks[id=quality-completion-gate]');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'Stop', 'quality-completion-gate.event must be Stop');
+  pushIf(errors, hook.script?.path === 'quality-completion-gate/quality-completion-gate.mjs', 'quality-completion-gate.script.path mismatch');
+  const s = hook.settings || {};
+  pushIf(errors, typeof s.verifyManifest === 'string' && s.verifyManifest.length > 0, 'quality-completion-gate settings.verifyManifest missing');
+  pushIf(errors, s.authority === 'exit-codes-only', 'quality-completion-gate settings.authority must be exit-codes-only');
+  pushIf(errors, nonEmptyStringArray(s.inputs), 'quality-completion-gate settings.inputs must be a non-empty string array');
+  pushIf(errors, nonEmptyStringArray(s.nonAuthority), 'quality-completion-gate settings.nonAuthority must be a non-empty string array');
+}
+
 export function validateConfig(config) {
   const errors = [];
   validateBaseConfig(config, errors);
   validateInjectProtocol(config, errors);
+  validateInjectProtocolComplex(config, errors);
   validateTelemetry(config, errors);
+  validateMemoryNormalizer(config, errors);
   validateLoopSafety(config, errors);
   validateThinkingGate(config, errors);
+  validateQualityCompletionGate(config, errors);
   validateSkillIndexer(config, errors);
   return { ok: errors.length === 0, errors };
 }

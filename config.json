@@ -350,33 +350,6 @@
         "inputs": ["git status --porcelain=v1", "quality-completion-gate/quality-verify-manifest.json"],
         "nonAuthority": ["PostToolUse telemetry", "assistant claims", "command text heuristics"]
       }
-    },
-
-    {
-      "id": "governance-gate",
-      "name": "Governance Write Gate",
-      "description": "Deny agent writes under governance/** in the clean repos unless the user typed an approval for that path. Agents draft/recommend only. PLANNED — script not built.",
-      "category": "gate",
-      "event": "PreToolUse",
-      "match": { "tools": ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"] },
-      "script": { "path": "governance-gate/gov-gate.mjs", "runtime": "node" },
-      "scope": { "projects": ["blockdata", "kai-chattr", "kai"], "paths": ["governance/**"] },
-      "enabled": false,
-      "failPolicy": "closed",
-      "settings": {
-        "bashWriteVerbs": [">", ">>", "tee", "cp", "mv", "sed -i"],
-        "approval": {
-          "window": 5,
-          "userTypedOnly": true,
-          "explicitKeyword": "APPROVE",
-          "naturalLanguage": {
-            "enabled": true,
-            "requireUserStatedPath": true,
-            "affirmatives": ["ok", "okay", "yes", "go", "go ahead", "do it", "save it", "save it there", "approved", "proceed"]
-          }
-        },
-        "protectedPaths": ["E:/hooks/**"]
-      }
     }
   ],
 
