@@ -1,0 +1,19 @@
+# Runtime state / telemetry — not source, may contain logged content
+.state/
+hooks.db
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Third-party reference clones — studied locally, not vendored
+references/
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# OS cruft
+.DS_Store
+Thumbs.db

@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "description": "Deterministic completion-gate manifest. The Stop hook maps git status to declared domains and runs these commands; exit codes are the only authority.",
+  "repos": [
+    {
+      "name": "writing-system",
+      "root": "E:/writing-system",
+      "blockOnUnmatched": false,
+      "domains": {
+        "contracts": {
+          "paths": [
+            { "prefixes": ["contracts/", "governance/"] },
+            { "contains": ["/contract"] },
+            { "prefixes": ["scripts/tests/"] }
+          ],
+          "commands": [
+            { "label": "writing-system contract CI", "command": "pnpm run ci:contracts", "timeoutMs": 120000 }
+          ]
+        },
+        "frontend": {
+          "paths": [
+            { "prefixes": ["web/"] },
+            { "extensions": [".tsx", ".jsx", ".css"], "segments": ["web", "src"] }
+          ],
+          "commands": [
+            { "label": "writing-system frontend build", "command": "pnpm run ci:frontend", "timeoutMs": 120000 },
+            { "label": "writing-system web tests", "command": "pnpm run ci:web", "timeoutMs": 120000 }
+          ]
+        },
+        "devdocs": {
+          "paths": [
+            { "prefixes": ["apps/devdocs/"] }
+          ],
+          "commands": [
+            { "label": "writing-system devdocs build", "command": "pnpm run ci:devdocs", "timeoutMs": 120000 }
+          ]
+        },
+        "backend": {
+          "paths": [
+            { "prefixes": ["services/platform-api/"] }
+          ],
+          "commands": [
+            { "label": "writing-system platform-api tests", "command": "pnpm run ci:platform-api", "timeoutMs": 180000 }
+          ]
+        },
+        "database": {
+          "paths": [
+            { "prefixes": ["supabase/migrations/"] }
+          ],
+          "commands": [
+            { "label": "writing-system supabase migration guardrails", "command": "pnpm run test:supabase-migration-guardrails", "timeoutMs": 120000 }
+          ]
+        },
+        "secrets": {
+          "paths": [
+            { "prefixes": ["secrets/", "tools/secrets/"] }
+          ],
+          "commands": [
+            { "label": "writing-system plaintext secret scan", "command": "pnpm run secrets:check", "timeoutMs": 120000 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "blockdata",
+      "root": "E:/blockdata",
+      "blockOnUnmatched": false,
+      "domains": {
+        "governance": {
+          "paths": [
+            { "prefixes": ["governance/"] }
+          ],
+          "commands": [
+            { "label": "blockdata contracts", "command": "node governance/scripts/check-contracts.mjs", "timeoutMs": 60000 },
+            { "label": "blockdata npm deps", "command": "node governance/scripts/check-deps.mjs", "timeoutMs": 60000 },
+            { "label": "blockdata python deps", "command": "python governance/scripts/check-python-deps.py", "timeoutMs": 60000 }
+          ]
+        },
+        "backend": {
+          "paths": [
+            { "prefixes": ["services/api/"] }
+          ],
+          "commands": [
+            { "label": "blockdata python deps", "command": "python governance/scripts/check-python-deps.py", "timeoutMs": 60000 },
+            { "label": "blockdata openapi", "command": "node governance/scripts/check-openapi.mjs", "timeoutMs": 60000 }
+          ]
+        },
+        "devdocs": {
+          "paths": [
+            { "prefixes": ["apps/devdocs/"] }
+          ],
+          "commands": [
+            { "label": "blockdata devdocs build", "command": "pnpm --dir apps/devdocs run build", "timeoutMs": 180000 }
+          ]
+        },
+        "web": {
+          "paths": [
+            { "prefixes": ["apps/web/"] }
+          ],
+          "commands": [
+            { "label": "blockdata npm deps", "command": "node governance/scripts/check-deps.mjs", "timeoutMs": 60000 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "kai-chattr",
+      "root": "E:/kai-chattr",
+      "blockOnUnmatched": false,
+      "domains": {
+        "governance": {
+          "paths": [
+            { "prefixes": ["governance/"] }
+          ],
+          "commands": [
+            { "label": "kai-chattr contracts", "command": "node governance/scripts/check-contracts.mjs", "timeoutMs": 60000 },
+            { "label": "kai-chattr npm deps", "command": "node governance/scripts/check-deps.mjs", "timeoutMs": 60000 },
+            { "label": "kai-chattr python deps", "command": "python governance/scripts/check-python-deps.py", "timeoutMs": 60000 }
+          ]
+        },
+        "backend": {
+          "paths": [
+            { "prefixes": ["services/api/"] }
+          ],
+          "commands": [
+            { "label": "kai-chattr python deps", "command": "python governance/scripts/check-python-deps.py", "timeoutMs": 60000 }
+          ]
+        },
+        "devdocs": {
+          "paths": [
+            { "prefixes": ["apps/devdocs/"] }
+          ],
+          "commands": [
+            { "label": "kai-chattr devdocs build", "command": "pnpm --dir apps/devdocs run build", "timeoutMs": 180000 }
+          ]
+        },
+        "web": {
+          "paths": [
+            { "prefixes": ["apps/web/"] }
+          ],
+          "commands": [
+            { "label": "kai-chattr npm deps", "command": "node governance/scripts/check-deps.mjs", "timeoutMs": 60000 }
+          ]
+        }
+      }
+    }
+  ]
+}

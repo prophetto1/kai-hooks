@@ -1,0 +1,898 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "file:///E:/hooks/config.schema.json",
+  "title": "E:/hooks control-plane config",
+  "type": "object",
+  "required": [
+    "version",
+    "shared",
+    "hooks",
+    "scripts"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "shared": {
+      "$ref": "#/$defs/shared"
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hook"
+      }
+    },
+    "scripts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/script"
+      }
+    }
+  },
+  "patternProperties": {
+    "^_": true
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "positiveNumber": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "positiveInteger": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "score100": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "unitWeight": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "shared": {
+      "type": "object",
+      "required": [
+        "paths",
+        "runtime",
+        "projects",
+        "memoryTags",
+        "stopwords"
+      ],
+      "properties": {
+        "paths": {
+          "type": "object",
+          "required": [
+            "hooksDir",
+            "memoryDb",
+            "hooksDb",
+            "skillsCatalog",
+            "qualityVerifyManifest",
+            "skillsWarehouse",
+            "python"
+          ],
+          "properties": {
+            "hooksDir": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "memoryDb": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "hooksDb": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "skillsCatalog": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "qualityVerifyManifest": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "skillsWarehouse": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "python": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          },
+          "additionalProperties": false
+        },
+        "runtime": {
+          "type": "object",
+          "required": [
+            "pythonTimeoutMs",
+            "gitTimeoutMs",
+            "verifyCommandTimeoutMs",
+            "pythonEnv"
+          ],
+          "properties": {
+            "pythonTimeoutMs": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "gitTimeoutMs": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "verifyCommandTimeoutMs": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "pythonEnv": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "slug",
+              "kind",
+              "repoPath",
+              "aliases"
+            ],
+            "properties": {
+              "slug": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "kind": {
+                "enum": [
+                  "rebuild",
+                  "legacy"
+                ]
+              },
+              "repoPath": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "aliases": {
+                "$ref": "#/$defs/stringArray"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "memoryTags": {
+          "type": "object",
+          "required": [
+            "crossProjectTag",
+            "legacyRewrite",
+            "retiredTags"
+          ],
+          "properties": {
+            "crossProjectTag": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "legacyRewrite": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "retiredTags": {
+              "$ref": "#/$defs/stringArray"
+            }
+          },
+          "additionalProperties": false
+        },
+        "stopwords": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "hook": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "description",
+        "category",
+        "event",
+        "match",
+        "script",
+        "scope",
+        "enabled",
+        "failPolicy",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "push",
+            "gate",
+            "telemetry"
+          ]
+        },
+        "event": {
+          "oneOf": [
+            {
+              "enum": [
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PermissionRequest",
+                "PostToolUse",
+                "PostToolUseFailure",
+                "Stop",
+                "PreCompact",
+                "PostCompact"
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "SessionStart",
+                  "UserPromptSubmit",
+                  "PreToolUse",
+                  "PermissionRequest",
+                  "PostToolUse",
+                  "PostToolUseFailure",
+                  "Stop",
+                  "PreCompact",
+                  "PostCompact"
+                ]
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "match": {
+          "type": "object"
+        },
+        "script": {
+          "$ref": "#/$defs/scriptRef"
+        },
+        "scope": {
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "failPolicy": {
+          "enum": [
+            "open",
+            "closed"
+          ]
+        },
+        "settings": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "inject-protocol"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/injectSettings"
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "script": {
+      "type": "object",
+      "required": [
+        "id",
+        "name",
+        "description",
+        "category",
+        "trigger",
+        "script",
+        "enabled",
+        "settings"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "description": {
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "trigger": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "script": {
+          "$ref": "#/$defs/scriptRef"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "settings": {
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "skill-indexer"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/skillIndexerSettings"
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "scriptRef": {
+      "type": "object",
+      "required": [
+        "path",
+        "runtime"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "runtime": {
+          "enum": [
+            "node",
+            "python"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "injectSettings": {
+      "type": "object",
+      "required": [
+        "terms",
+        "sources",
+        "output"
+      ],
+      "properties": {
+        "terms": {
+          "type": "object",
+          "required": [
+            "minLen",
+            "max",
+            "contextPrompts",
+            "tokenCharClass",
+            "tokenRegexFlags"
+          ],
+          "properties": {
+            "minLen": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "max": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "contextPrompts": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tokenCharClass": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "tokenRegexFlags": {
+              "enum": [
+                "gu"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "sources": {
+          "type": "object",
+          "required": [
+            "protocol",
+            "memory",
+            "skills"
+          ],
+          "properties": {
+            "protocol": {
+              "type": "object",
+              "required": [
+                "file"
+              ],
+              "properties": {
+                "file": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              },
+              "patternProperties": {
+                "^_": true
+              },
+              "additionalProperties": false
+            },
+            "memory": {
+              "$ref": "#/$defs/memorySource"
+            },
+            "skills": {
+              "$ref": "#/$defs/skillsSource"
+            }
+          },
+          "additionalProperties": false
+        },
+        "output": {
+          "type": "object",
+          "required": [
+            "capChars",
+            "labels"
+          ],
+          "properties": {
+            "capChars": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "labels": {
+              "type": "object",
+              "required": [
+                "skills",
+                "memory"
+              ],
+              "properties": {
+                "skills": {
+                  "$ref": "#/$defs/nonEmptyString"
+                },
+                "memory": {
+                  "$ref": "#/$defs/nonEmptyString"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "memorySource": {
+      "type": "object",
+      "required": [
+        "ftsTable",
+        "joinTable",
+        "filters",
+        "max",
+        "snippetChars",
+        "minTerms",
+        "candidatePool",
+        "scoring",
+        "explain"
+      ],
+      "properties": {
+        "ftsTable": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "joinTable": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "filters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "enum": [
+                  "not-deleted",
+                  "not-superseded"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "max": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "snippetChars": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "minTerms": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "candidatePool": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "scoring": {
+          "$ref": "#/$defs/memoryScoring"
+        },
+        "explain": {
+          "$ref": "#/$defs/explainConfig"
+        }
+      },
+      "additionalProperties": false
+    },
+    "scoreScale": {
+      "type": "object",
+      "required": [
+        "min",
+        "max",
+        "baseline"
+      ],
+      "properties": {
+        "min": {
+          "const": 0
+        },
+        "max": {
+          "const": 100
+        },
+        "baseline": {
+          "const": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "memoryScoring": {
+      "type": "object",
+      "required": [
+        "scoreScale",
+        "missingSignalPolicy",
+        "minFinalScore",
+        "relativeFloor",
+        "signals"
+      ],
+      "properties": {
+        "scoreScale": {
+          "$ref": "#/$defs/scoreScale"
+        },
+        "missingSignalPolicy": {
+          "const": "drop-candidate"
+        },
+        "minFinalScore": {
+          "$ref": "#/$defs/score100"
+        },
+        "relativeFloor": {
+          "$ref": "#/$defs/score100"
+        },
+        "signals": {
+          "type": "object",
+          "required": [
+            "fts",
+            "recency",
+            "confidence"
+          ],
+          "properties": {
+            "fts": {
+              "$ref": "#/$defs/ftsSignal"
+            },
+            "recency": {
+              "$ref": "#/$defs/recencySignal"
+            },
+            "confidence": {
+              "$ref": "#/$defs/confidenceSignal"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "skillsScoring": {
+      "type": "object",
+      "required": [
+        "scoreScale",
+        "missingSignalPolicy",
+        "minFinalScore",
+        "relativeFloor",
+        "signals"
+      ],
+      "properties": {
+        "scoreScale": {
+          "$ref": "#/$defs/scoreScale"
+        },
+        "missingSignalPolicy": {
+          "const": "drop-candidate"
+        },
+        "minFinalScore": {
+          "$ref": "#/$defs/score100"
+        },
+        "relativeFloor": {
+          "$ref": "#/$defs/score100"
+        },
+        "signals": {
+          "type": "object",
+          "required": [
+            "fts",
+            "overlap"
+          ],
+          "properties": {
+            "fts": {
+              "$ref": "#/$defs/skillFtsSignal"
+            },
+            "overlap": {
+              "$ref": "#/$defs/overlapSignal"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ftsSignal": {
+      "type": "object",
+      "required": [
+        "weight",
+        "transform"
+      ],
+      "properties": {
+        "weight": {
+          "$ref": "#/$defs/unitWeight"
+        },
+        "transform": {
+          "const": "top-candidate-relative"
+        }
+      },
+      "additionalProperties": false
+    },
+    "recencySignal": {
+      "type": "object",
+      "required": [
+        "weight",
+        "transform",
+        "halfLifeDays"
+      ],
+      "properties": {
+        "weight": {
+          "$ref": "#/$defs/unitWeight"
+        },
+        "transform": {
+          "const": "half-life-decay"
+        },
+        "halfLifeDays": {
+          "$ref": "#/$defs/positiveNumber"
+        }
+      },
+      "additionalProperties": false
+    },
+    "confidenceSignal": {
+      "type": "object",
+      "required": [
+        "weight",
+        "transform"
+      ],
+      "properties": {
+        "weight": {
+          "$ref": "#/$defs/unitWeight"
+        },
+        "transform": {
+          "const": "stored-confidence"
+        }
+      },
+      "additionalProperties": false
+    },
+    "skillFtsSignal": {
+      "type": "object",
+      "required": [
+        "weight",
+        "transform",
+        "fieldBoosts"
+      ],
+      "properties": {
+        "weight": {
+          "$ref": "#/$defs/unitWeight"
+        },
+        "transform": {
+          "const": "top-candidate-relative"
+        },
+        "fieldBoosts": {
+          "type": "object",
+          "required": [
+            "name",
+            "description",
+            "content"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/unitWeight"
+            },
+            "description": {
+              "$ref": "#/$defs/unitWeight"
+            },
+            "content": {
+              "$ref": "#/$defs/unitWeight"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "overlapSignal": {
+      "type": "object",
+      "required": [
+        "weight",
+        "transform",
+        "minTerms"
+      ],
+      "properties": {
+        "weight": {
+          "$ref": "#/$defs/unitWeight"
+        },
+        "transform": {
+          "const": "matched-terms-ratio"
+        },
+        "minTerms": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      },
+      "additionalProperties": false
+    },
+    "skillsSource": {
+      "type": "object",
+      "required": [
+        "ftsTable",
+        "joinTable",
+        "max",
+        "candidatePool",
+        "scoring",
+        "noiseTerms",
+        "explain"
+      ],
+      "properties": {
+        "ftsTable": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "joinTable": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "max": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "candidatePool": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "scoring": {
+          "$ref": "#/$defs/skillsScoring"
+        },
+        "noiseTerms": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "explain": {
+          "$ref": "#/$defs/explainConfig"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "explainConfig": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "includeInPrompt",
+        "includeInSelfTest"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "includeInPrompt": {
+          "type": "boolean"
+        },
+        "includeInSelfTest": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "skillIndexerSettings": {
+      "type": "object",
+      "required": [
+        "scanRoots",
+        "skipPathContains",
+        "fts",
+        "dedupPrefer",
+        "curatedRegex"
+      ],
+      "properties": {
+        "scanRoots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "source",
+              "scope"
+            ],
+            "properties": {
+              "path": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "source": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "scope": {
+                "$ref": "#/$defs/nonEmptyString"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "skipPathContains": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "fts": {
+          "type": "object",
+          "required": [
+            "columns"
+          ],
+          "properties": {
+            "columns": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "const": "name"
+                },
+                {
+                  "const": "description"
+                },
+                {
+                  "const": "content"
+                }
+              ],
+              "items": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "dedupPrefer": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "curatedRegex": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

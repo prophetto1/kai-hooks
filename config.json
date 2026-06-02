@@ -1,0 +1,343 @@
+{
+  "$schema": "./config.schema.json",
+  "version": 2,
+  "_intent": "Single source of truth for every tunable in the E:/hooks system. Scripts can read shared + their own entry; selected hooks are wired from the live Codex config.",
+
+  "shared": {
+    "paths": {
+      "hooksDir": "E:/hooks",
+      "memoryDb": "E:/memory/memory-sqlite.db",
+      "hooksDb": "E:/hooks/hooks.db",
+      "skillsCatalog": "E:/hooks/skills-catalog.md",
+      "qualityVerifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
+      "skillsWarehouse": "E:/__skills",
+      "python": "python"
+    },
+    "runtime": {
+      "pythonTimeoutMs": 5000,
+      "gitTimeoutMs": 5000,
+      "verifyCommandTimeoutMs": 120000,
+      "pythonEnv": { "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8" }
+    },
+
+    "projects": [
+      { "slug": "blockdata",      "kind": "rebuild", "repoPath": "E:/blockdata",      "aliases": [] },
+      { "slug": "kai-chattr",     "kind": "rebuild", "repoPath": "E:/kai-chattr",     "aliases": [] },
+      { "slug": "kai",            "kind": "rebuild", "repoPath": "E:/kai-ai",         "aliases": ["kai-ai"] },
+      { "slug": "writing-system", "kind": "legacy",  "repoPath": "E:/writing-system", "aliases": [] },
+      { "slug": "chattr",         "kind": "legacy",  "repoPath": "E:/chattr",         "aliases": [] }
+    ],
+    "_projectsNote": "ONE model replacing divergent hardcoded project lists. Derive: detection slugs = slug + aliases; recall scope = matched-slug + 'all'; rebuild set (= tag-normalizer ACTIVE, gov-gate scope) = kind=='rebuild'; PROJECT set = all slugs + 'all'. Skill indexing is intentionally separate: E:/__skills warehouse + skills-catalog.md allowlist only.",
+
+    "memoryTags": {
+      "crossProjectTag": "all",
+      "legacyRewrite": { "global": "all" },
+      "retiredTags": ["global"]
+    },
+
+    "stopwords": "a an the and or but if then else for to of in on at by with from into over under is are was were be been being do does did done have has had will would can could should may might must this that these those it its as we you they he she them our your their what when where why how which who whom not no yes ok okay today now here there about out up down off so just like get got need want try also use using used make made making go going gone work working please thanks let lets sure really very more most one two new add added update updated change changed thing things stuff way ways back next first last"
+  },
+
+  "hooks": [
+    {
+      "id": "inject-protocol",
+      "name": "Protocol + Recall Injector",
+      "description": "Push the A-E protocol + ranked memory recall + curated skill suggestion into every prompt. Fail-open.",
+      "category": "push",
+      "event": "UserPromptSubmit",
+      "match": { "tools": ["*"] },
+      "script": { "path": "inject-protocol/inject-protocol.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "_model": "Three stages: terms (parse the prompt) -> sources (compose injected content from protocol + memory + skills) -> output (cap + labels).",
+        "terms": {
+          "minLen": 3,
+          "max": 8,
+          "contextPrompts": 2,
+          "tokenCharClass": "\\p{L}\\p{N}_-",
+          "tokenRegexFlags": "gu"
+        },
+        "sources": {
+          "protocol": {
+            "file": "per-prompt-protocol.md",
+            "_note": "Static A-E rules text. Injected verbatim as the BASE of every output; memory + skills are appended."
+          },
+          "memory": {
+            "ftsTable": "memory_content_fts",
+            "joinTable": "memories",
+            "filters": [
+              { "id": "not-deleted" },
+              { "id": "not-superseded" }
+            ],
+            "max": 3,
+            "snippetChars": 1500,
+            "minTerms": 2,
+            "candidatePool": 7,
+            "scoring": {
+              "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
+              "missingSignalPolicy": "drop-candidate",
+              "minFinalScore": 0,
+              "relativeFloor": 60,
+              "signals": {
+                "fts": { "weight": 0.50, "transform": "top-candidate-relative" },
+                "recency": { "weight": 0.40, "transform": "half-life-decay", "halfLifeDays": 5 },
+                "confidence": { "weight": 0.10, "transform": "stored-confidence" }
+              }
+            },
+            "explain": { "enabled": true, "includeInPrompt": false, "includeInSelfTest": true }
+          },
+          "skills": {
+            "ftsTable": "skills_fts",
+            "joinTable": "skills",
+            "max": 2,
+            "candidatePool": 7,
+            "scoring": {
+              "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
+              "missingSignalPolicy": "drop-candidate",
+              "minFinalScore": 0,
+              "relativeFloor": 70,
+              "signals": {
+                "fts": {
+                  "weight": 0.80,
+                  "transform": "top-candidate-relative",
+                  "fieldBoosts": { "name": 0.20, "description": 0.50, "content": 0.30 }
+                },
+                "overlap": { "weight": 0.20, "transform": "matched-terms-ratio", "minTerms": 2 }
+              }
+            },
+            "noiseTerms": [
+              "all", "also", "actually", "again", "anything", "basically", "before", "being", "cant",
+              "check", "checking", "ccs", "coding", "detail", "every", "explain", "filler", "first",
+              "frustrated", "generic", "help", "improve", "into", "ive", "language", "maybe", "much",
+              "optimized", "please", "proceed", "really", "scan", "start", "stuff", "sure", "system",
+              "thing", "things", "use", "using", "want", "words", "word", "work", "working"
+            ],
+            "explain": { "enabled": true, "includeInPrompt": false, "includeInSelfTest": true }
+          }
+        },
+        "output": {
+          "capChars": 9500,
+          "labels": {
+            "skills": "## Suggested skill(s) for this task",
+            "memory": "## Recalled memories (auto{scope} -- verify before relying)"
+          }
+        }
+      }
+    },
+
+    {
+      "id": "hook-telemetry",
+      "name": "Hook Telemetry Logger",
+      "description": "PostToolUse + PostToolUseFailure logger: append every tool firing to hook_events in the dedicated hooks DB (shared.paths.hooksDb). Status is event-derived (PostToolUseFailure=error; PostToolUse=ok unless the response envelope structurally signals an error) — no free-text scan. Observability substrate for loop-safety. Honors enabled/failPolicy/match via lib/hook_runtime.py. Fail-open, never blocks.",
+      "category": "telemetry",
+      "event": ["PostToolUse", "PostToolUseFailure"],
+      "match": { "tools": ["*"] },
+      "script": { "path": "telemetry/log-event.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "table": "hook_events",
+        "retentionDays": 30,
+        "retentionPruneEvery": 500,
+        "detailMaxChars": 500
+      }
+    },
+
+    {
+      "id": "memory-normalizer",
+      "name": "Memory Post-Write Normalizer",
+      "description": "PostToolUse observer for successful memory_store calls. Finds the stored memory row, applies the canonical retain normalizer to tags/type/metadata, and records update/skip/fail visibility in hook_events. Fail-open; never rewrites memory content, FTS rows, or vector rows.",
+      "category": "telemetry",
+      "event": "PostToolUse",
+      "match": {
+        "tools": [
+          "memory_store",
+          "mcp__mcp_router__memory_store",
+          "mcp__mcp-router__memory_store"
+        ]
+      },
+      "script": { "path": "memory-normalizer/normalize-after-store.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "table": "hook_events",
+        "auditTable": "hook_events",
+        "detailMaxChars": 750,
+        "sourceTools": [
+          "memory_store",
+          "mcp__mcp_router__memory_store",
+          "mcp__mcp-router__memory_store"
+        ],
+        "writes": {
+          "memoryTable": "memories",
+          "columns": ["tags", "memory_type", "metadata", "updated_at", "updated_at_iso"],
+          "contentMutation": false,
+          "vectorMutation": false,
+          "ftsMutation": false
+        }
+      }
+    },
+
+    {
+      "id": "loop-safety",
+      "name": "Loop-Safety Retry Breaker",
+      "description": "PreToolUse circuit-breaker. Reads the hook_events telemetry substrate (shared.paths.hooksDb) to count consecutive same-error failures of the SAME operation; soft-injects a change-approach directive at softMax and DENIES the tool call at hardMax. No external state store. Honors enabled/match/failPolicy via lib/hook_runtime.py. Fail-open: a guard error never blocks a tool.",
+      "category": "gate",
+      "event": "PreToolUse",
+      "match": { "tools": ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"] },
+      "script": { "path": "loop-safety/loop-guard.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "table": "hook_events",
+        "softMax": 3,
+        "hardMax": 5,
+        "lookback": 60,
+        "subcommandTools": { "terraform": 1, "tofu": 1, "pulumi": 1, "kubectl": 1, "k": 1, "helm": 1, "kustomize": 1, "argocd": 2, "flux": 1, "aws": 2, "gcloud": 1, "az": 1, "docker": 1, "podman": 1, "docker-compose": 1, "git": 1, "npm": 1, "pnpm": 1, "yarn": 1, "pip": 1, "cargo": 1, "go": 1 },
+        "bashSkipTokens": ["sudo", "doas", "env", "nice", "time", "nohup", "timeout", "stdbuf", "command", "exec", "builtin", "cd", "pushd", "popd"],
+        "editFamily": ["edit", "write", "multiedit", "notebookedit", "apply_patch"],
+        "_thresholds": "Consecutive same-operation, same-error failures. softMax=inject change-approach directive (tool still allowed). hardMax=deny the tool call. Derived from references/agentihooks retry_breaker dual-threshold; reimplemented native against SQLite hook_events (reset-on-success via walk-until-first-success scan).",
+        "_outputContract": "Cross-runtime PreToolUse JSON, verified against both vendor hook docs. HARD: hookSpecificOutput{hookEventName:PreToolUse, permissionDecision:deny, permissionDecisionReason}. SOFT: hookSpecificOutput{hookEventName:PreToolUse, additionalContext} + top-level systemMessage. Claude reads additionalContext; Codex reads systemMessage. Always exits 0; decision rides in JSON.",
+        "_matchNote": "Codex reports apply_patch edits as tool_name 'apply_patch'; Claude reports Edit/Write/MultiEdit/NotebookEdit. Both listed so the breaker covers edits on both runtimes."
+      }
+    },
+
+    {
+      "id": "quality-completion-gate",
+      "name": "Quality Completion Gate",
+      "description": "Stop hook that computes the git diff, maps changed files through a verify manifest, runs the manifest commands, and gates only on exit codes.",
+      "category": "gate",
+      "event": "Stop",
+      "match": { "tools": ["*"] },
+      "script": { "path": "quality-completion-gate/quality-completion-gate.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "verifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
+        "authority": "exit-codes-only",
+        "inputs": ["git status --porcelain=v1", "quality-completion-gate/quality-verify-manifest.json"],
+        "nonAuthority": ["PostToolUse telemetry", "assistant claims", "command text heuristics"]
+      }
+    },
+
+    {
+      "id": "governance-gate",
+      "name": "Governance Write Gate",
+      "description": "Deny agent writes under governance/** in the clean repos unless the user typed an approval for that path. Agents draft/recommend only. PLANNED — script not built.",
+      "category": "gate",
+      "event": "PreToolUse",
+      "match": { "tools": ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"] },
+      "script": { "path": "governance-gate/gov-gate.mjs", "runtime": "node" },
+      "scope": { "projects": ["blockdata", "kai-chattr", "kai"], "paths": ["governance/**"] },
+      "enabled": false,
+      "failPolicy": "closed",
+      "settings": {
+        "bashWriteVerbs": [">", ">>", "tee", "cp", "mv", "sed -i"],
+        "approval": {
+          "window": 5,
+          "userTypedOnly": true,
+          "explicitKeyword": "APPROVE",
+          "naturalLanguage": {
+            "enabled": true,
+            "requireUserStatedPath": true,
+            "affirmatives": ["ok", "okay", "yes", "go", "go ahead", "do it", "save it", "save it there", "approved", "proceed"]
+          }
+        },
+        "protectedPaths": ["E:/hooks/**"]
+      }
+    }
+  ],
+
+  "scripts": [
+    {
+      "id": "config-schema-generator",
+      "name": "Config Schema Generator",
+      "description": "Generates config.schema.json from lib/config-model.mjs. The schema is derived output, not the hand-maintained source of truth.",
+      "category": "maintenance",
+      "trigger": "manual",
+      "script": { "path": "scripts/generate-config-schema.mjs", "runtime": "node" },
+      "enabled": true,
+      "settings": {
+        "model": "lib/config-model.mjs",
+        "output": "config.schema.json"
+      }
+    },
+
+    {
+      "id": "runtime-hooks-validator",
+      "name": "Runtime Hooks Validator",
+      "description": "Validates config.json against lib/config-model.mjs, checks that config.schema.json is generated from that model, and verifies enabled script paths.",
+      "category": "maintenance",
+      "trigger": "manual",
+      "script": { "path": "scripts/validate-runtime-hooks.mjs", "runtime": "node" },
+      "enabled": true,
+      "settings": {
+        "model": "lib/config-model.mjs",
+        "config": "config.json",
+        "schema": "config.schema.json"
+      }
+    },
+
+    {
+      "id": "skill-indexer",
+      "name": "Skill Indexer",
+      "description": "Rebuilds skills/skills_fts in the memory DB from on-disk SKILL.md files. Derived mirror — full rebuild, no stale rows. Run manually after adding/editing/removing skills.",
+      "category": "maintenance",
+      "trigger": "manual",
+      "script": { "path": "scripts/index-skills.py", "runtime": "python" },
+      "enabled": true,
+      "settings": {
+        "scanRoots": [
+          { "path": "E:/__skills", "source": "warehouse", "scope": "all" }
+        ],
+        "skipPathContains": [".backup"],
+        "fts": { "columns": ["name", "description", "content"] },
+        "dedupPrefer": ["local-source", "shortest-path"],
+        "curatedRegex": "`([a-z0-9][a-z0-9:_-]{2,})`"
+      }
+    },
+
+    {
+      "id": "tag-normalizer",
+      "name": "Memory Tag Normalizer",
+      "description": "Enforces the locked project-tag taxonomy on the memory store (tags column only; safe). Dry-run by default; --apply writes. Reports untagged entries, never guesses.",
+      "category": "maintenance",
+      "trigger": "manual",
+      "script": { "path": "scripts/normalize-memory-tags.py", "runtime": "python" },
+      "enabled": true,
+      "settings": {
+        "activeSlugs": ["blockdata", "kai-chattr", "kai"],
+        "_activeSlugsNote": "= shared.projects where kind=='rebuild'. Listed for the python script; keep in sync with shared.projects.",
+        "projectSet": ["blockdata", "kai-chattr", "kai", "chattr", "writing-system", "all"],
+        "crossProjectTag": "all",
+        "legacyRewrite": { "global": "all" },
+        "reportUntagged": true,
+        "writes": { "column": "tags", "dryRunDefault": true }
+      }
+    },
+
+    {
+      "id": "validate-runtime-hooks",
+      "name": "Runtime Hook Validator",
+      "description": "Validates config.json, config.schema.json, hook/script paths, and the config-controlled inject/indexer settings.",
+      "category": "maintenance",
+      "trigger": "manual",
+      "script": { "path": "scripts/validate-runtime-hooks.mjs", "runtime": "node" },
+      "enabled": true,
+      "settings": {}
+    }
+  ],
+
+  "_notWired": {
+    "reason": "Historical migration notes for settings not yet consumed by all loaders. Some hooks are wired from Codex config.toml; this section tracks remaining cleanup.",
+    "cutoverRequires": [
+      "normalize-memory-tags.py: read this config instead of its hardcoded constants"
+    ]
+  }
+}
