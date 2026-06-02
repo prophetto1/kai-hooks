@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { generateConfigSchema, validateConfig } from '../lib/config-model.mjs';
+import { generateConfigSchema, validateConfig } from './config-model.mjs';
 
 const CONFIG_PATH = process.env.HOOKS_CONFIG_PATH || 'E:/hooks/config.json';
 const SCHEMA_PATH = 'E:/hooks/config.schema.json';
@@ -68,7 +68,7 @@ function main() {
   const schema = readJson(SCHEMA_PATH);
   const expectedSchema = generateConfigSchema();
 
-  add(errors, stableStringify(schema) === stableStringify(expectedSchema), 'config.schema.json is not generated from lib/config-model.mjs');
+  add(errors, stableStringify(schema) === stableStringify(expectedSchema), 'config.schema.json is not generated from _core/config-model.mjs');
   add(errors, config.$schema === './config.schema.json', 'config.$schema must point to ./config.schema.json');
 
   const modelResult = validateConfig(config);

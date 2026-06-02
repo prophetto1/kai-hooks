@@ -49,6 +49,7 @@ _Review_
 _Code quality / repo mechanics_
 - `refactor` — direct refactoring workflow: improve structure without changing behavior.
 - `performant-code` — performance-oriented implementation work for large data, hot paths, or tight resource constraints.
+- `install-closure-tooling` — install and verify Madge + dependency-cruiser page-closure graph tooling in a repo.
 - `git-workflow` — branches, commits, PRs, merges, conflicts, and repository hygiene.
 
 _Verify / finish_

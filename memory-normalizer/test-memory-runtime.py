@@ -9,9 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-LIB = ROOT / "lib"
+HOOK_DIR = Path(__file__).resolve().parent
+ROOT = HOOK_DIR.parent
+LIB = ROOT / "_core"
 sys.path.insert(0, str(LIB))
+sys.path.insert(0, str(HOOK_DIR))
 
 from memory_retain import MemoryQualityError, build_retain_payload, normalize_tags  # noqa: E402
 
@@ -170,6 +172,7 @@ def normalizer_check(config: dict) -> dict:
     stable_keys = ["content", "memory_type", "tags", "content_fingerprint", "update_mode"]
     unstable = [key for key in stable_keys if first[key] != second[key]]
     rewrites = normalize_tags(["global", "memory"], config)
+    retired_rewrite = normalize_tags(["untagged", "global", "memory"], config)
     rejected_low_quality = False
     try:
         build_retain_payload("ok", config=config)
@@ -178,6 +181,7 @@ def normalizer_check(config: dict) -> dict:
     return {
         "unstableNonTimestampKeys": unstable,
         "globalRewrite": rewrites,
+        "retiredRewrite": retired_rewrite,
         "rejectedLowQuality": rejected_low_quality,
         "sample": {
             "memoryType": first["memory_type"],
@@ -212,6 +216,8 @@ def main() -> int:
         errors.append(f"normalizer non-timestamp fields drifted: {report['normalizer']['unstableNonTimestampKeys']}")
     if report["normalizer"]["globalRewrite"] != ["all", "memory"]:
         errors.append(f"global rewrite failed: {report['normalizer']['globalRewrite']}")
+    if report["normalizer"]["retiredRewrite"] != ["all", "memory"]:
+        errors.append(f"retired tag rewrite failed: {report['normalizer']['retiredRewrite']}")
     if "kai-chattr" not in report["normalizer"]["sample"]["tags"]:
         errors.append(f"project tag was not derived from config: {report['normalizer']['sample']['tags']}")
     if "all" not in report["normalizer"]["hookSystemSample"]["tags"] or "kai-chattr" in report["normalizer"]["hookSystemSample"]["tags"]:

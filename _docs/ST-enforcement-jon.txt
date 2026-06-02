@@ -1,0 +1,2 @@
+The hard truth: a hook fires on events (PreToolUse, Stop…), and "phase transition" is not an event — it's semantic. So the entire design problem reduces to: turn "major phase transition" into a signal a deterministic hook can detect. Everything else follows.
+

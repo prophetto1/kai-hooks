@@ -19,9 +19,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
-LIB = ROOT / "lib"
+HOOK_DIR = Path(__file__).resolve().parent
+ROOT = HOOK_DIR.parent
+LIB = ROOT / "_core"
 sys.path.insert(0, str(LIB))
+sys.path.insert(0, str(HOOK_DIR))
 
 from hook_runtime import connect, detect_project, hooks_db, run, safe_table  # noqa: E402
 from memory_retain import build_retain_payload, normalize_tags, tags_to_string  # noqa: E402
@@ -31,6 +33,8 @@ DEFAULT_TOOLS = {
     "memory_store",
     "mcp__mcp_router__memory_store",
     "mcp__mcp-router__memory_store",
+    "mcp__memory-sqlite__memory_store",
+    "mcp__memory_sqlite__memory_store",
 }
 HASH_RE = re.compile(r"\b(?:hash|content_hash)\s*[:=]\s*([0-9a-f]{32,64})\b", re.IGNORECASE)
 
@@ -173,7 +177,12 @@ def parse_metadata(raw: Any) -> dict[str, Any]:
     return {"legacy_metadata": str(raw)}
 
 
-def find_memory_row(con: sqlite3.Connection, content_hash: str, content: str) -> sqlite3.Row | None:
+def find_memory_row(
+    con: sqlite3.Connection,
+    content_hash: str,
+    raw_content: str,
+    normalized_content: str,
+) -> sqlite3.Row | None:
     con.row_factory = sqlite3.Row
     if content_hash:
         row = con.execute(
@@ -183,12 +192,15 @@ def find_memory_row(con: sqlite3.Connection, content_hash: str, content: str) ->
         ).fetchone()
         if row:
             return row
-    if content:
-        return con.execute(
-            "SELECT * FROM memories WHERE content = ? AND deleted_at IS NULL "
-            "ORDER BY COALESCE(created_at, 0) DESC, id DESC LIMIT 1",
-            (content,),
-        ).fetchone()
+    for content in (raw_content, normalized_content):
+        if content:
+            row = con.execute(
+                "SELECT * FROM memories WHERE content = ? AND deleted_at IS NULL "
+                "ORDER BY COALESCE(created_at, 0) DESC, id DESC LIMIT 1",
+                (content,),
+            ).fetchone()
+            if row:
+                return row
     return None
 
 
@@ -197,12 +209,13 @@ def update_memory_row(
     row: sqlite3.Row,
     retain: dict[str, Any],
     *,
+    config: dict[str, Any],
     payload: dict[str, Any],
     normalized_at: float,
 ) -> dict[str, Any]:
     existing_metadata = parse_metadata(row["metadata"])
-    existing_tags = normalize_tags(row["tags"])
-    new_tags = normalize_tags([*existing_tags, *retain["tags"]])
+    existing_tags = normalize_tags(row["tags"], config)
+    new_tags = normalize_tags([*existing_tags, *retain["tags"]], config)
     normalizer_core = {
         "version": "v1",
         "source_tool": payload.get("tool_name", ""),
@@ -214,7 +227,7 @@ def update_memory_row(
     if not isinstance(existing_normalizer, dict):
         existing_normalizer = {}
 
-    desired_tags = tags_to_string(new_tags)
+    desired_tags = tags_to_string(new_tags, config)
     metadata_needs_update = any(existing_normalizer.get(key) != value for key, value in normalizer_core.items())
     changed_columns = []
     if str(row["tags"] if row["tags"] is not None else "") != desired_tags:
@@ -293,7 +306,7 @@ def normalize_store(payload: dict[str, Any], config: dict[str, Any], hcfg: dict[
     content_hash = response_hash(payload)
     con = connect(memory_db(config))
     try:
-        row = find_memory_row(con, content_hash, retain["content"])
+        row = find_memory_row(con, content_hash, content, retain["content"])
         if not row:
             return {
                 "decision": "skip",
@@ -301,7 +314,7 @@ def normalize_store(payload: dict[str, Any], config: dict[str, Any], hcfg: dict[
                 "reason": "memory row not found",
                 "contentHash": content_hash,
             }
-        result = update_memory_row(con, row, retain, payload=payload, normalized_at=time.time())
+        result = update_memory_row(con, row, retain, config=config, payload=payload, normalized_at=time.time())
         con.commit()
         return result
     finally:
@@ -348,10 +361,19 @@ CREATE TABLE memories (
 )
 """)
             content = "Decision: E:/hooks memory-normalizer derives memory metadata after successful memory_store calls. Why: systematic hook tagging is required."
+            whitespace_content = (
+                "Decision:   E:/hooks memory-normalizer    locates rows without a returned hash.\n\n"
+                "Why: fallback row correlation should survive content cleanup."
+            )
             con.execute(
                 "INSERT INTO memories (content_hash, content, tags, memory_type, metadata, created_at, confidence) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                ("abc123def456abc123def456abc123def456abc123def456abc123def456abc1", content, "", "", "{}", time.time(), 0.8),
+                ("abc123def456abc123def456abc123def456abc123def456abc123def456abc1", content, "untagged,fixture-retired", "", "{}", time.time(), 0.8),
+            )
+            con.execute(
+                "INSERT INTO memories (content_hash, content, tags, memory_type, metadata, created_at, confidence) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                ("def456abc123def456abc123def456abc123def456abc123def456abc123def4", whitespace_content, "fixture-retired", "", "{}", time.time(), 0.8),
             )
             con.commit()
         finally:
@@ -363,7 +385,7 @@ CREATE TABLE memories (
                 "projects": [
                     {"slug": "kai-chattr", "kind": "rebuild", "repoPath": "E:/kai-chattr", "aliases": []}
                 ],
-                "memoryTags": {"crossProjectTag": "all", "legacyRewrite": {"global": "all"}, "retiredTags": ["global"]},
+                "memoryTags": {"crossProjectTag": "all", "legacyRewrite": {"global": "all"}, "retiredTags": ["global", "fixture-retired"]},
                 "stopwords": "",
             }
         }
@@ -383,10 +405,20 @@ CREATE TABLE memories (
         result = normalize_store(payload, config, hcfg)
         audit(config, hcfg, payload, result, started)
         second_result = normalize_store(payload, config, hcfg)
+        fallback_payload = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "mcp__mcp_router__memory_store",
+            "tool_input": {"content": whitespace_content},
+            "tool_response": {"text": "Stored memory."},
+            "cwd": "E:/kai-chattr",
+            "session_id": "self-test",
+        }
+        fallback_result = normalize_store(fallback_payload, config, hcfg)
 
         con = sqlite3.connect(memory_path)
         try:
-            row = con.execute("SELECT tags, memory_type, metadata FROM memories LIMIT 1").fetchone()
+            row = con.execute("SELECT tags, memory_type, metadata FROM memories WHERE content_hash LIKE 'abc123%'").fetchone()
+            fallback_row = con.execute("SELECT tags, memory_type, metadata FROM memories WHERE content_hash LIKE 'def456%'").fetchone()
         finally:
             con.close()
         hooks_con = sqlite3.connect(hooks_path)
@@ -399,7 +431,12 @@ CREATE TABLE memories (
         report = {
             "result": result,
             "secondResult": second_result,
+            "fallbackResult": fallback_result,
             "row": {"tags": tags, "memory_type": row[1]},
+            "fallbackRow": {
+                "tags": fallback_row[0].split(",") if fallback_row and fallback_row[0] else [],
+                "memory_type": fallback_row[1] if fallback_row else "",
+            },
             "auditCount": audit_count,
         }
         errors = []
@@ -407,8 +444,13 @@ CREATE TABLE memories (
             errors.append("normalizer did not update the fixture row")
         if second_result["decision"] != "skip":
             errors.append(f"second normalization was not idempotent: {second_result}")
-        if "decision" not in tags or "all" not in tags or "kai-chattr" in tags:
-            errors.append(f"fixture row missing expected tags: {tags}")
+        if fallback_result["decision"] != "updated":
+            errors.append(f"fallback row was not normalized without response hash: {fallback_result}")
+        if "decision" not in tags or "all" not in tags or "kai-chattr" in tags or "fixture-retired" in tags or "untagged" not in tags:
+            errors.append(f"fixture row missing expected config-isolation tags: {tags}")
+        fallback_tags = report["fallbackRow"]["tags"]
+        if "fixture-retired" in fallback_tags or "decision" not in fallback_tags:
+            errors.append(f"fallback row missing expected tags: {fallback_tags}")
         if row[1] != "decision":
             errors.append(f"fixture row memory_type mismatch: {row[1]}")
         if audit_count != 1:

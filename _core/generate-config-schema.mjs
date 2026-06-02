@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { writeFileSync } from 'node:fs';
 
-import { generateConfigSchema } from '../lib/config-model.mjs';
+import { generateConfigSchema } from './config-model.mjs';
 
 const outPath = process.argv[2] || 'E:/hooks/config.schema.json';
 const schema = generateConfigSchema();

@@ -408,6 +408,14 @@ function identifier(value) {
   return typeof value === 'string' && /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
 }
 
+function nonEmptyStringArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string' && item.length > 0);
+}
+
+function bool(value) {
+  return typeof value === 'boolean';
+}
+
 function validTokenRegex(terms) {
   if (!terms || typeof terms.tokenCharClass !== 'string' || typeof terms.tokenRegexFlags !== 'string') return false;
   if (!TOKENIZER_CONFIG.allowedFlags.includes(terms.tokenRegexFlags)) return false;
@@ -567,7 +575,7 @@ function validateSkillIndexer(config, errors) {
   pushIf(errors, isObject(script), 'missing scripts[id=skill-indexer]');
   if (!isObject(script)) return;
   const settings = script.settings || {};
-  pushIf(errors, script.script?.path === 'scripts/index-skills.py', 'skill-indexer.script.path mismatch');
+  pushIf(errors, script.script?.path === 'inject-protocol/index-skills.py', 'skill-indexer.script.path mismatch');
   pushIf(errors, Array.isArray(settings.scanRoots) && settings.scanRoots.length > 0, 'skill-indexer scanRoots missing');
   pushIf(errors, Array.isArray(settings.skipPathContains), 'skill-indexer skipPathContains invalid');
   pushIf(errors, JSON.stringify(settings.fts?.columns) === JSON.stringify(['name', 'description', 'content']), 'skill-indexer fts.columns must be name/description/content');
@@ -580,7 +588,7 @@ function validateTelemetry(config, errors) {
   if (!isObject(hook)) return;
   const evs = Array.isArray(hook.event) ? hook.event : [hook.event];
   pushIf(errors, evs.includes('PostToolUse'), 'hook-telemetry.event must include PostToolUse');
-  pushIf(errors, hook.script?.path === 'telemetry/log-event.py', 'hook-telemetry.script.path mismatch');
+  pushIf(errors, hook.script?.path === 'hook-telemetry/log-event.py', 'hook-telemetry.script.path mismatch');
   const s = hook.settings || {};
   pushIf(errors, identifier(s.table), 'hook-telemetry settings.table must be a SQL identifier');
   pushIf(errors, Number.isInteger(s.retentionDays) && s.retentionDays >= 0, 'hook-telemetry settings.retentionDays must be an integer >= 0');
@@ -607,12 +615,51 @@ function validateLoopSafety(config, errors) {
   pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'loop-safety.enabled requires hook-telemetry.enabled (it reads hook_events)');
 }
 
+function validateThinkingGate(config, errors) {
+  const hook = hookById(config, 'thinking-gate');
+  pushIf(errors, isObject(hook), 'missing hooks[id=thinking-gate]');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'PreToolUse', 'thinking-gate.event must be PreToolUse');
+  pushIf(errors, hook.script?.path === 'thinking-gate/thinking-gate.py', 'thinking-gate.script.path mismatch');
+  const s = hook.settings || {};
+  pushIf(errors, identifier(s.table), 'thinking-gate settings.table must be a SQL identifier');
+  pushIf(errors, identifier(s.consumptionTable), 'thinking-gate settings.consumptionTable must be a SQL identifier');
+  pushIf(errors, positiveInteger(s.ttlSeconds), 'thinking-gate settings.ttlSeconds invalid');
+  const policy = s.grantPolicy;
+  pushIf(errors, isObject(policy), 'thinking-gate settings.grantPolicy must be an object');
+  if (isObject(policy)) {
+    pushIf(errors, policy.mode === 'bounded_tool_count', 'thinking-gate settings.grantPolicy.mode must be bounded_tool_count');
+    pushIf(errors, positiveInteger(policy.maxToolUses), 'thinking-gate settings.grantPolicy.maxToolUses invalid');
+    for (const key of ['maxGatedToolUses', 'consumeReadOnly', 'unknownToolPolicy', 'highRiskPolicy', 'shellCompoundPolicy']) {
+      pushIf(errors, !(key in policy), `thinking-gate settings.grantPolicy.${key} is not supported`);
+    }
+  }
+  for (const key of ['toolClasses', 'readOnlyShellPrefixes']) {
+    pushIf(errors, !(key in s), `thinking-gate settings.${key} is not supported`);
+  }
+  pushIf(
+    errors,
+    Array.isArray(s.thinkingTools) && s.thinkingTools.length > 0 && s.thinkingTools.every((tool) => typeof tool === 'string' && tool.length > 0),
+    'thinking-gate settings.thinkingTools must be a non-empty string array'
+  );
+  pushIf(
+    errors,
+    s.bootstrapTools === undefined || (isObject(s.bootstrapTools) && Object.values(s.bootstrapTools).every((terms) => (
+      Array.isArray(terms) && terms.length > 0 && terms.every((term) => typeof term === 'string' && term.length > 0)
+    ))),
+    'thinking-gate settings.bootstrapTools must map tool names to non-empty string arrays'
+  );
+  const tel = hookById(config, 'hook-telemetry');
+  pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'thinking-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
+}
+
 export function validateConfig(config) {
   const errors = [];
   validateBaseConfig(config, errors);
   validateInjectProtocol(config, errors);
   validateTelemetry(config, errors);
   validateLoopSafety(config, errors);
+  validateThinkingGate(config, errors);
   validateSkillIndexer(config, errors);
   return { ok: errors.length === 0, errors };
 }

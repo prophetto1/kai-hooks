@@ -143,6 +143,59 @@
           ]
         }
       }
+    },
+    {
+      "name": "hooks",
+      "root": "E:/hooks",
+      "blockOnUnmatched": true,
+      "domains": {
+        "runtime": {
+          "paths": [
+            {
+              "prefixes": [
+                "_db/",
+                "_docs/",
+                "docs/",
+                "closure-gate/",
+                "depcruiser-migrations/",
+                "hook-telemetry/",
+                "inject-protocol/",
+                "inject-protocol-complex/",
+                "_core/",
+                "lib/",
+                "loop-safety/",
+                "memory-normalizer/",
+                "quality-completion-gate/",
+                "scripts/",
+                "thinking-gate/",
+                "telemetry/"
+              ],
+              "excludeSegments": ["__pycache__"]
+            },
+            {
+              "fileNames": [
+                ".gitignore",
+                "claude-proposal.md",
+                "codex-proposal.md",
+                "config.json",
+                "config.schema.json",
+                "skills-catalog.md"
+              ]
+            }
+          ],
+          "commands": [
+            { "label": "hooks runtime config validation", "command": "node _core/validate-runtime-hooks.mjs", "timeoutMs": 30000 },
+            { "label": "hooks config model tests", "command": "node quality-completion-gate/test-config-model.mjs", "timeoutMs": 30000 },
+            { "label": "hooks memory runtime smoke", "command": "python memory-normalizer/test-memory-runtime.py", "timeoutMs": 30000 },
+            { "label": "hooks memory normalizer self-test", "command": "python memory-normalizer/normalize-after-store.py --self-test", "timeoutMs": 30000 },
+            { "label": "hooks thinking gate tests", "command": "python thinking-gate/test-thinking-gate.py", "timeoutMs": 30000 },
+            { "label": "hooks inject protocol self-test", "command": "node inject-protocol/inject-protocol.mjs --self-test", "timeoutMs": 30000 },
+            { "label": "hooks inject protocol complex self-test", "command": "node inject-protocol-complex/inject-protocol-complex.mjs --self-test", "timeoutMs": 30000 },
+            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/test-memory-runtime.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol-complex/recall.py inject-protocol-complex/suggest.py", "timeoutMs": 30000 },
+            { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-protocol.mjs && node --check inject-protocol-complex/inject-protocol-complex.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs", "timeoutMs": 30000 }
+          ]
+        }
+      }
     }
   ]
 }

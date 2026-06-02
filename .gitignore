@@ -1,6 +1,7 @@
 # Runtime state / telemetry — not source, may contain logged content
 .state/
 hooks.db
+_db/*.bak
 *.db
 *.db-wal
 *.db-shm
@@ -9,6 +10,7 @@ hooks.db
 
 # Third-party reference clones — studied locally, not vendored
 references/
+_references/
 
 # Python caches
 __pycache__/

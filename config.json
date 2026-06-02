@@ -7,7 +7,7 @@
     "paths": {
       "hooksDir": "E:/hooks",
       "memoryDb": "E:/memory/memory-sqlite.db",
-      "hooksDb": "E:/hooks/hooks.db",
+      "hooksDb": "E:/hooks/_db/hooks.db",
       "skillsCatalog": "E:/hooks/skills-catalog.md",
       "qualityVerifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
       "skillsWarehouse": "E:/__skills",
@@ -32,7 +32,7 @@
     "memoryTags": {
       "crossProjectTag": "all",
       "legacyRewrite": { "global": "all" },
-      "retiredTags": ["global"]
+      "retiredTags": ["global", "untagged"]
     },
 
     "stopwords": "a an the and or but if then else for to of in on at by with from into over under is are was were be been being do does did done have has had will would can could should may might must this that these those it its as we you they he she them our your their what when where why how which who whom not no yes ok okay today now here there about out up down off so just like get got need want try also use using used make made making go going gone work working please thanks let lets sure really very more most one two new add added update updated change changed thing things stuff way ways back next first last"
@@ -128,13 +128,101 @@
     },
 
     {
+      "id": "inject-protocol-complex",
+      "name": "Protocol + Recall Injector — Complex profile",
+      "description": "Push the A-E protocol + ranked memory recall + curated skill suggestion into every prompt. Fail-open.",
+      "category": "push",
+      "event": "UserPromptSubmit",
+      "match": { "tools": ["*"] },
+      "script": { "path": "inject-protocol-complex/inject-protocol-complex.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": false,
+      "failPolicy": "open",
+      "settings": {
+        "_model": "Three stages: terms (parse the prompt) -> sources (compose injected content from protocol + memory + skills) -> output (cap + labels).",
+        "terms": {
+          "minLen": 3,
+          "max": 8,
+          "contextPrompts": 2,
+          "tokenCharClass": "\\p{L}\\p{N}_-",
+          "tokenRegexFlags": "gu"
+        },
+        "sources": {
+          "protocol": {
+            "file": "per-prompt-protocol.md",
+            "_note": "Static A-E rules text. Injected verbatim as the BASE of every output; memory + skills are appended."
+          },
+          "memory": {
+            "ftsTable": "memory_content_fts",
+            "joinTable": "memories",
+            "filters": [
+              { "id": "not-deleted" },
+              { "id": "not-superseded" }
+            ],
+            "max": 3,
+            "snippetChars": 1500,
+            "minTerms": 2,
+            "candidatePool": 7,
+            "scoring": {
+              "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
+              "missingSignalPolicy": "drop-candidate",
+              "minFinalScore": 0,
+              "relativeFloor": 60,
+              "signals": {
+                "fts": { "weight": 0.50, "transform": "top-candidate-relative" },
+                "recency": { "weight": 0.40, "transform": "half-life-decay", "halfLifeDays": 5 },
+                "confidence": { "weight": 0.10, "transform": "stored-confidence" }
+              }
+            },
+            "explain": { "enabled": false, "includeInPrompt": false, "includeInSelfTest": true }
+          },
+          "skills": {
+            "ftsTable": "skills_fts",
+            "joinTable": "skills",
+            "max": 2,
+            "candidatePool": 7,
+            "scoring": {
+              "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
+              "missingSignalPolicy": "drop-candidate",
+              "minFinalScore": 0,
+              "relativeFloor": 70,
+              "signals": {
+                "fts": {
+                  "weight": 0.80,
+                  "transform": "top-candidate-relative",
+                  "fieldBoosts": { "name": 0.20, "description": 0.50, "content": 0.30 }
+                },
+                "overlap": { "weight": 0.20, "transform": "matched-terms-ratio", "minTerms": 2 }
+              }
+            },
+            "noiseTerms": [
+              "all", "also", "actually", "again", "anything", "basically", "before", "being", "cant",
+              "check", "checking", "ccs", "coding", "detail", "every", "explain", "filler", "first",
+              "frustrated", "generic", "help", "improve", "into", "ive", "language", "maybe", "much",
+              "optimized", "please", "proceed", "really", "scan", "start", "stuff", "sure", "system",
+              "thing", "things", "use", "using", "want", "words", "word", "work", "working"
+            ],
+            "explain": { "enabled": false, "includeInPrompt": false, "includeInSelfTest": true }
+          }
+        },
+        "output": {
+          "capChars": 9500,
+          "labels": {
+            "skills": "## Suggested skill(s) for this task",
+            "memory": "## Recalled memories (auto{scope} -- verify before relying)"
+          }
+        }
+      }
+    },
+
+    {
       "id": "hook-telemetry",
       "name": "Hook Telemetry Logger",
-      "description": "PostToolUse + PostToolUseFailure logger: append every tool firing to hook_events in the dedicated hooks DB (shared.paths.hooksDb). Status is event-derived (PostToolUseFailure=error; PostToolUse=ok unless the response envelope structurally signals an error) — no free-text scan. Observability substrate for loop-safety. Honors enabled/failPolicy/match via lib/hook_runtime.py. Fail-open, never blocks.",
+      "description": "PostToolUse + PostToolUseFailure logger: append every tool firing to hook_events in the dedicated hooks DB (shared.paths.hooksDb). Status is event-derived (PostToolUseFailure=error; PostToolUse=ok unless the response envelope structurally signals an error) — no free-text scan. Observability substrate for loop-safety. Honors enabled/failPolicy/match via _core/hook_runtime.py. Fail-open, never blocks.",
       "category": "telemetry",
       "event": ["PostToolUse", "PostToolUseFailure"],
       "match": { "tools": ["*"] },
-      "script": { "path": "telemetry/log-event.py", "runtime": "python" },
+      "script": { "path": "hook-telemetry/log-event.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
       "enabled": true,
       "failPolicy": "open",
@@ -143,6 +231,40 @@
         "retentionDays": 30,
         "retentionPruneEvery": 500,
         "detailMaxChars": 500
+      }
+    },
+
+    {
+      "id": "thinking-gate",
+      "name": "Sequential Thinking Gate",
+      "description": "PreToolUse gate that requires an unexpired same-session successful sequential-thinking MCP call with remaining grant uses. The configured thinking tools are exempt so the gate cannot deadlock the required action.",
+      "category": "gate",
+      "event": "PreToolUse",
+      "match": { "tools": ["*"] },
+      "script": { "path": "thinking-gate/thinking-gate.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "table": "hook_events",
+        "consumptionTable": "thinking_gate_consumptions",
+        "ttlSeconds": 500,
+        "grantPolicy": {
+          "mode": "bounded_tool_count",
+          "maxToolUses": 5
+        },
+        "thinkingTools": [
+          "mcp__mcp_router__sequentialthinking",
+          "mcp__mcp-router__sequentialthinking",
+          "mcp__sequential-thinking__sequentialthinking",
+          "mcp__sequentialthinking__sequentialthinking",
+          "mcp__plugin_sequential-thinking_sequential-thinking__sequentialthinking",
+          "mcp__plugin_sequentialthinking_sequentialthinking__sequentialthinking"
+        ],
+        "bootstrapTools": {
+          "ToolSearch": ["sequentialthinking", "sequential thinking"]
+        },
+        "_mode": "Active bounded grant. One successful configured thinking tool grants maxToolUses matched tool calls within ttlSeconds. Every matched non-thinking, non-bootstrap tool consumes one use; there is no read/write taxonomy or read-only exemption."
       }
     },
 
@@ -156,7 +278,9 @@
         "tools": [
           "memory_store",
           "mcp__mcp_router__memory_store",
-          "mcp__mcp-router__memory_store"
+          "mcp__mcp-router__memory_store",
+          "mcp__memory-sqlite__memory_store",
+          "mcp__memory_sqlite__memory_store"
         ]
       },
       "script": { "path": "memory-normalizer/normalize-after-store.py", "runtime": "python" },
@@ -170,7 +294,9 @@
         "sourceTools": [
           "memory_store",
           "mcp__mcp_router__memory_store",
-          "mcp__mcp-router__memory_store"
+          "mcp__mcp-router__memory_store",
+          "mcp__memory-sqlite__memory_store",
+          "mcp__memory_sqlite__memory_store"
         ],
         "writes": {
           "memoryTable": "memories",
@@ -185,10 +311,10 @@
     {
       "id": "loop-safety",
       "name": "Loop-Safety Retry Breaker",
-      "description": "PreToolUse circuit-breaker. Reads the hook_events telemetry substrate (shared.paths.hooksDb) to count consecutive same-error failures of the SAME operation; soft-injects a change-approach directive at softMax and DENIES the tool call at hardMax. No external state store. Honors enabled/match/failPolicy via lib/hook_runtime.py. Fail-open: a guard error never blocks a tool.",
+      "description": "PreToolUse circuit-breaker. Reads the hook_events telemetry substrate (shared.paths.hooksDb) to count consecutive same-error failures of the SAME operation; soft-injects a change-approach directive at softMax and DENIES the tool call at hardMax. No external state store. Honors enabled/match/failPolicy via _core/hook_runtime.py. Fail-open: a guard error never blocks a tool.",
       "category": "gate",
       "event": "PreToolUse",
-      "match": { "tools": ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"] },
+      "match": { "tools": ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "mcp__plugin_context-mode_context-mode__ctx_batch_execute", "mcp__plugin_context-mode_context-mode__ctx_execute", "mcp__plugin_context-mode_context-mode__ctx_execute_file", "mcp__plugin_context-mode_context-mode__ctx_search", "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index"] },
       "script": { "path": "loop-safety/loop-guard.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
       "enabled": true,
@@ -258,13 +384,13 @@
     {
       "id": "config-schema-generator",
       "name": "Config Schema Generator",
-      "description": "Generates config.schema.json from lib/config-model.mjs. The schema is derived output, not the hand-maintained source of truth.",
+      "description": "Generates config.schema.json from _core/config-model.mjs. The schema is derived output, not the hand-maintained source of truth.",
       "category": "maintenance",
       "trigger": "manual",
-      "script": { "path": "scripts/generate-config-schema.mjs", "runtime": "node" },
+      "script": { "path": "_core/generate-config-schema.mjs", "runtime": "node" },
       "enabled": true,
       "settings": {
-        "model": "lib/config-model.mjs",
+        "model": "_core/config-model.mjs",
         "output": "config.schema.json"
       }
     },
@@ -272,13 +398,13 @@
     {
       "id": "runtime-hooks-validator",
       "name": "Runtime Hooks Validator",
-      "description": "Validates config.json against lib/config-model.mjs, checks that config.schema.json is generated from that model, and verifies enabled script paths.",
+      "description": "Validates config.json against _core/config-model.mjs, checks that config.schema.json is generated from that model, and verifies enabled script paths.",
       "category": "maintenance",
       "trigger": "manual",
-      "script": { "path": "scripts/validate-runtime-hooks.mjs", "runtime": "node" },
+      "script": { "path": "_core/validate-runtime-hooks.mjs", "runtime": "node" },
       "enabled": true,
       "settings": {
-        "model": "lib/config-model.mjs",
+        "model": "_core/config-model.mjs",
         "config": "config.json",
         "schema": "config.schema.json"
       }
@@ -290,7 +416,7 @@
       "description": "Rebuilds skills/skills_fts in the memory DB from on-disk SKILL.md files. Derived mirror — full rebuild, no stale rows. Run manually after adding/editing/removing skills.",
       "category": "maintenance",
       "trigger": "manual",
-      "script": { "path": "scripts/index-skills.py", "runtime": "python" },
+      "script": { "path": "inject-protocol/index-skills.py", "runtime": "python" },
       "enabled": true,
       "settings": {
         "scanRoots": [
@@ -309,7 +435,7 @@
       "description": "Enforces the locked project-tag taxonomy on the memory store (tags column only; safe). Dry-run by default; --apply writes. Reports untagged entries, never guesses.",
       "category": "maintenance",
       "trigger": "manual",
-      "script": { "path": "scripts/normalize-memory-tags.py", "runtime": "python" },
+      "script": { "path": "memory-normalizer/normalize-memory-tags.py", "runtime": "python" },
       "enabled": true,
       "settings": {
         "activeSlugs": ["blockdata", "kai-chattr", "kai"],
@@ -328,7 +454,7 @@
       "description": "Validates config.json, config.schema.json, hook/script paths, and the config-controlled inject/indexer settings.",
       "category": "maintenance",
       "trigger": "manual",
-      "script": { "path": "scripts/validate-runtime-hooks.mjs", "runtime": "node" },
+      "script": { "path": "_core/validate-runtime-hooks.mjs", "runtime": "node" },
       "enabled": true,
       "settings": {}
     }
@@ -336,8 +462,6 @@
 
   "_notWired": {
     "reason": "Historical migration notes for settings not yet consumed by all loaders. Some hooks are wired from Codex config.toml; this section tracks remaining cleanup.",
-    "cutoverRequires": [
-      "normalize-memory-tags.py: read this config instead of its hardcoded constants"
-    ]
+    "cutoverRequires": []
   }
 }

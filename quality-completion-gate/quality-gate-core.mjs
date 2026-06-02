@@ -3,7 +3,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const CONFIG_PATH = 'E:/hooks/config.json';
+const CONFIG_PATH = process.env.HOOKS_CONFIG_PATH || 'E:/hooks/config.json';
 
 const SHARED_DEFAULTS = {
   paths: {

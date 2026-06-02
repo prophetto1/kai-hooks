@@ -47,7 +47,7 @@ def fail_policy(hcfg: dict) -> str:
 
 
 def hooks_db(config: dict) -> str:
-    return config.get("shared", {}).get("paths", {}).get("hooksDb", "E:/hooks/hooks.db")
+    return config.get("shared", {}).get("paths", {}).get("hooksDb", "E:/hooks/_db/hooks.db")
 
 
 def matches_tool(hcfg: dict, tool_name: str) -> bool:

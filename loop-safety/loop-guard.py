@@ -26,7 +26,7 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_core"))
 from hook_runtime import connect, extract_target, hooks_db, run, safe_table  # noqa: E402
 
 # Wrapper tokens that prefix a real command; skipped (with their flags/args) when finding
