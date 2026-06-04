@@ -650,7 +650,42 @@ function validateMemoryNormalizer(config, errors) {
   pushIf(errors, identifier(s.table), 'memory-normalizer settings.table must be a SQL identifier');
   pushIf(errors, identifier(s.auditTable), 'memory-normalizer settings.auditTable must be a SQL identifier');
   pushIf(errors, positiveInteger(s.detailMaxChars), 'memory-normalizer settings.detailMaxChars invalid');
-  pushIf(errors, nonEmptyStringArray(s.sourceTools), 'memory-normalizer settings.sourceTools must be a non-empty string array');
+  const matchTools = hook.match?.tools;
+  const matchToolsValid = nonEmptyStringArray(matchTools);
+  const sourceToolsValid = nonEmptyStringArray(s.sourceTools);
+  pushIf(errors, matchToolsValid, 'memory-normalizer match.tools must be a non-empty string array');
+  pushIf(errors, sourceToolsValid, 'memory-normalizer settings.sourceTools must be a non-empty string array');
+  if (matchToolsValid && sourceToolsValid) {
+    const sortedUnique = (items) => [...new Set(items.map((item) => String(item)))].sort();
+    const matchToolSet = sortedUnique(matchTools);
+    const sourceToolSet = sortedUnique(s.sourceTools);
+    pushIf(
+      errors,
+      matchToolSet.length === sourceToolSet.length && matchToolSet.every((tool, index) => tool === sourceToolSet[index]),
+      'memory-normalizer match.tools must equal settings.sourceTools'
+    );
+  }
+  const requiredMutationSuffixes = [
+    'memory_store',
+    'memory_update',
+    'memory_store_session',
+    'memory_observe',
+    'memory_harvest',
+    'memory_ingest',
+    'memory_resolve',
+    'memory_cleanup',
+    'memory_delete',
+    'mistake_note_add'
+  ];
+  if (Array.isArray(s.sourceTools)) {
+    for (const suffix of requiredMutationSuffixes) {
+      pushIf(
+        errors,
+        s.sourceTools.some((tool) => tool === suffix || String(tool).endsWith(`__${suffix}`)),
+        `memory-normalizer sourceTools missing ${suffix}`
+      );
+    }
+  }
   pushIf(errors, isObject(s.writes), 'memory-normalizer settings.writes must be an object');
   if (isObject(s.writes)) {
     pushIf(errors, identifier(s.writes.memoryTable), 'memory-normalizer settings.writes.memoryTable must be a SQL identifier');

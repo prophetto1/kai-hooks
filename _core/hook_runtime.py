@@ -109,6 +109,13 @@ def connect(db_path: str) -> sqlite3.Connection:
     return con
 
 
+def connect_readonly(db_path: str) -> sqlite3.Connection:
+    normalized = os.path.abspath(db_path).replace("\\", "/")
+    con = sqlite3.connect(f"file:{normalized}?mode=ro", uri=True, timeout=3.0)
+    con.execute("PRAGMA busy_timeout=3000")
+    return con
+
+
 def run(hook_id: str, handler) -> None:
     """Uniform entrypoint: enforce enabled + failPolicy; never let a hook bug escape.
 

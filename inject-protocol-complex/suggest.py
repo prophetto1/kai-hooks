@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -42,6 +43,13 @@ def unit_weight(value, label):
 
 def overlap_count(text, terms):
     return sum(1 for term in terms if re.search(r"\b" + re.escape(term) + r"\b", text))
+
+
+def connect_readonly(db_path):
+    normalized = os.path.abspath(db_path).replace("\\", "/")
+    con = sqlite3.connect(f"file:{normalized}?mode=ro", uri=True, timeout=3.0)
+    con.execute("PRAGMA busy_timeout=3000")
+    return con
 
 
 def scoring_policy(config):
@@ -100,7 +108,7 @@ def main(argv):
         f"WHERE {fts_table} MATCH ? AND s.curated=1 ORDER BY sc LIMIT {candidate_pool}"
     )
 
-    conn = sqlite3.connect(db)
+    conn = connect_readonly(db)
     try:
         rows = conn.execute(sql, [query]).fetchall()
     finally:

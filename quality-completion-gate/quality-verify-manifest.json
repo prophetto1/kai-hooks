@@ -145,6 +145,59 @@
       }
     },
     {
+      "name": "chattr",
+      "root": "E:/chattr",
+      "blockOnUnmatched": false,
+      "domains": {
+        "backend": {
+          "paths": [
+            { "extensions": [".py"], "excludeSegments": ["__pycache__", ".venv"] },
+            { "prefixes": ["server/", "tests/", "schemas/", "scripts/", "windows/", "macos-linux/", "session_templates/"] },
+            { "fileNames": ["pyproject.toml", "uv.lock", "requirements.txt", "config.toml", "config.local.toml.example"] }
+          ],
+          "commands": [
+            { "label": "chattr backend tests", "command": "uv run pytest", "timeoutMs": 180000, "maxBuffer": 4194304 }
+          ]
+        },
+        "web": {
+          "paths": [
+            { "prefixes": ["apps/web/"] },
+            { "fileNames": ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"] }
+          ],
+          "commands": [
+            { "label": "chattr web build", "command": "pnpm --filter @chattr/web build", "timeoutMs": 180000, "maxBuffer": 4194304 }
+          ]
+        }
+      }
+    },
+    {
+      "name": "jwc-global",
+      "root": "E:/jwc-global",
+      "blockOnUnmatched": false,
+      "domains": {
+        "devdocs": {
+          "paths": [
+            { "prefixes": ["content/", "src/", "public/"] },
+            {
+              "fileNames": [
+                "next-env.d.ts",
+                "next.config.ts",
+                "package.json",
+                "pnpm-lock.yaml",
+                "postcss.config.mjs",
+                "source.config.ts",
+                "tsconfig.json"
+              ]
+            }
+          ],
+          "commands": [
+            { "label": "jwc-global devdocs build", "command": "pnpm run build", "timeoutMs": 180000, "maxBuffer": 4194304 },
+            { "label": "jwc-global typecheck", "command": "pnpm exec tsc --noEmit", "timeoutMs": 120000, "maxBuffer": 4194304 }
+          ]
+        }
+      }
+    },
+    {
       "name": "hooks",
       "root": "E:/hooks",
       "blockOnUnmatched": true,
@@ -186,13 +239,16 @@
           "commands": [
             { "label": "hooks runtime config validation", "command": "node _core/validate-runtime-hooks.mjs", "timeoutMs": 30000 },
             { "label": "hooks config model tests", "command": "node quality-completion-gate/test-config-model.mjs", "timeoutMs": 30000 },
+            { "label": "hooks quality gate core tests", "command": "node quality-completion-gate/test-quality-gate-core.mjs", "timeoutMs": 30000 },
+            { "label": "hooks inject protocol core tests", "command": "node inject-protocol/test-inject-protocol-core.mjs", "timeoutMs": 30000 },
             { "label": "hooks memory runtime smoke", "command": "python memory-normalizer/test-memory-runtime.py", "timeoutMs": 30000 },
+            { "label": "hooks read-only sqlite tests", "command": "python _core/test-hook-runtime.py && python inject-protocol/test-recall-readonly.py && python inject-protocol/test-suggest-readonly.py && python inject-protocol-complex/test-recall-readonly.py && python inject-protocol-complex/test-suggest-readonly.py && python memory-normalizer/test-normalize-memory-tags-readonly.py && python memory-normalizer/test-maintain-readonly.py", "timeoutMs": 30000 },
             { "label": "hooks memory normalizer self-test", "command": "python memory-normalizer/normalize-after-store.py --self-test", "timeoutMs": 30000 },
             { "label": "hooks thinking gate tests", "command": "python thinking-gate/test-thinking-gate.py", "timeoutMs": 30000 },
             { "label": "hooks inject protocol self-test", "command": "node inject-protocol/inject-protocol.mjs --self-test", "timeoutMs": 30000 },
             { "label": "hooks inject protocol complex self-test", "command": "node inject-protocol-complex/inject-protocol-complex.mjs --self-test", "timeoutMs": 30000 },
-            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/test-memory-runtime.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol-complex/recall.py inject-protocol-complex/suggest.py", "timeoutMs": 30000 },
-            { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-protocol.mjs && node --check inject-protocol-complex/inject-protocol-complex.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs", "timeoutMs": 30000 }
+            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol-complex/recall.py inject-protocol-complex/suggest.py inject-protocol-complex/test-recall-readonly.py inject-protocol-complex/test-suggest-readonly.py", "timeoutMs": 30000 },
+            { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/inject-protocol.mjs && node --check inject-protocol-complex/inject-protocol-complex.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs", "timeoutMs": 30000 }
           ]
         }
       }

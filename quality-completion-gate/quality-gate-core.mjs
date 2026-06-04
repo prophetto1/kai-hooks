@@ -111,18 +111,21 @@ export function gitRoot(cwd, timeoutMs) {
 
 function parseStatusFiles(status) {
   const files = [];
-  for (const line of status.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
-    if (!line.trim()) continue;
-    const raw = line.slice(3).trim();
-    const file = raw.includes(' -> ') ? raw.split(' -> ').pop() : raw;
+  const records = String(status || '').split('\0');
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (!record) continue;
+    const statusCode = record.slice(0, 2);
+    const file = record.slice(3);
     if (file) files.push(normalizePath(file));
+    if (statusCode.includes('R') || statusCode.includes('C')) index += 1;
   }
   return files;
 }
 
 export function changedFiles(repoRoot, timeoutMs) {
   try {
-    const status = execFileSync('git', ['-C', repoRoot, 'status', '--porcelain=v1'], {
+    const status = execFileSync('git', ['-C', repoRoot, 'status', '--porcelain=v1', '-z', '--untracked-files=all'], {
       encoding: 'utf8',
       timeout: timeoutMs,
       stdio: ['ignore', 'pipe', 'pipe']

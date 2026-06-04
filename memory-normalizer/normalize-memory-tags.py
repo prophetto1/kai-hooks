@@ -18,6 +18,13 @@ CONFIG_PATH = os.environ.get("HOOKS_CONFIG_PATH", "E:/hooks/config.json")
 SCRIPT_ID = "tag-normalizer"
 
 
+def connect_readonly(db_path: str) -> sqlite3.Connection:
+    normalized = os.path.abspath(db_path).replace("\\", "/")
+    con = sqlite3.connect(f"file:{normalized}?mode=ro", uri=True, timeout=3.0)
+    con.execute("PRAGMA busy_timeout=3000")
+    return con
+
+
 def load_config(path: str) -> dict:
     try:
         with open(path, encoding="utf-8") as fh:
@@ -108,7 +115,7 @@ def main() -> int:
     args = arg_parser().parse_args()
     config = load_config(args.config)
     taxonomy = configured_taxonomy(config, script_settings(config))
-    con = sqlite3.connect(taxonomy["db"])
+    con = sqlite3.connect(taxonomy["db"]) if args.apply else connect_readonly(taxonomy["db"])
 
     if args.hash_prefix:
         rows = con.execute(

@@ -174,11 +174,21 @@ def consume_bounded_grant(
     return True
 
 
-def emit_deny(tool_name: str, ttl_seconds: int, max_uses: int) -> None:
+def primary_thinking_tool(thinking_tools: list[str]) -> str:
+    """The sequential-thinking tool to name in the deny message: prefer the
+    mcp-router spelling (the active one), else the first configured tool."""
+    for name in thinking_tools:
+        if "mcp-router" in name:
+            return name
+    return thinking_tools[0] if thinking_tools else "mcp__mcp-router__sequentialthinking"
+
+
+def emit_deny(tool_name: str, ttl_seconds: int, max_uses: int, thinking_tools: list[str]) -> None:
+    checkpoint_tool = primary_thinking_tool(thinking_tools)
     reason = (
-        f"thinking-gate: planning checkpoint needed before using '{tool_name}'. "
-        f"Current grant is missing, expired, or fully used "
-        f"({max_uses} tool use(s), {ttl_seconds}s TTL)."
+        f"thinking-gate: '{tool_name}' blocked — no active planning grant. "
+        f"Call `{checkpoint_tool}` once (grants {max_uses} tool use(s)/{ttl_seconds}s); "
+        f"if it's not loaded, load it via ToolSearch first (exempt)."
     )
     print(json.dumps({
         "hookSpecificOutput": {
@@ -216,7 +226,7 @@ def handler(payload, config, hcfg):
         con.close()
 
     if not allowed:
-        emit_deny(tool_name, ttl, max_uses)
+        emit_deny(tool_name, ttl, max_uses, thinking_tools)
 
 
 if __name__ == "__main__":

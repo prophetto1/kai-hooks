@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -56,6 +57,13 @@ def truncate(text, limit):
     return trimmed + " ..."
 
 
+def connect_readonly(db_path):
+    normalized = os.path.abspath(db_path).replace("\\", "/")
+    con = sqlite3.connect(f"file:{normalized}?mode=ro", uri=True, timeout=3.0)
+    con.execute("PRAGMA busy_timeout=3000")
+    return con
+
+
 def scoring_policy(config):
     scoring = config["scoring"]
     scale = scoring["scoreScale"]
@@ -110,7 +118,7 @@ def main(argv):
     sql += f"ORDER BY rank LIMIT {candidate_pool}"
 
     now = time.time()
-    conn = sqlite3.connect(db)
+    conn = connect_readonly(db)
     candidates = []
     try:
         for content, rank, created_at, confidence in conn.execute(sql, params).fetchall():

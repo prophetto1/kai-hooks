@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, basename, extname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { validateConfig as validateRuntimeConfig } from '../_core/config-model.mjs';
+import { composeOutput, projectFromCwd } from '../inject-protocol/inject-core.mjs';
 
 const modulePath = fileURLToPath(import.meta.url);
 const here = dirname(modulePath);
@@ -179,14 +180,7 @@ function getCwd(o) {
 }
 
 function project(cwd) {
-  const c = (cwd || '').replace(/\\/g, '/').toLowerCase();
-  for (const p of SHARED.projects.entries) {
-    if (p.repoPath && (c === p.repoPath || c.startsWith(`${p.repoPath}/`))) return p.slug;
-  }
-  for (const p of SHARED.projects.entries) {
-    for (const token of p.detection) if (c.includes('/' + token)) return p.slug;
-  }
-  return '';
+  return projectFromCwd(cwd, SHARED.projects.entries);
 }
 
 const TERM_RE = new RegExp(`[${S.terms.tokenCharClass}]{${S.terms.minLen},}`, S.terms.tokenRegexFlags);
@@ -362,13 +356,7 @@ function run() {
     const suggested = suggest(extracted, proj);
     const memories = recall(extracted, proj);
     const labels = outputLabels(proj);
-    let add = '';
-    if (suggested.length) add += `\n\n${labels.skills}\n- ${suggested.map(x => x.name).join('\n- ')}`;
-    if (memories.length) add += `\n\n${labels.memory}\n- ${memories.map(x => x.text).join('\n- ')}`;
-    out = (out + add).length <= S.output.capChars
-      ? out + add
-      : (rules + (suggested.length ? `\n\n${labels.skills}\n- ${suggested.map(x => x.name).join('\n- ')}` : '')).slice(0, S.output.capChars);
-    if ((rules + add).length > S.output.capChars) debug(`output truncated from ${(rules + add).length} to ${out.length} chars`);
+    out = composeOutput(rules, suggested, memories, labels, S.output.capChars);
   }
   if (!out) return;
   process.stdout.write(JSON.stringify({

@@ -1,3 +1,10 @@
+## Temporary Manual Workflow Directive
+
+- We are manually walking the depcruiser/OpenHands migration process one step at a time in `#newchat`.
+- Claude reports the current process state for the group: what we just did, what landed, what is next, and where the work stands.
+- Codex acts after Jon gives the go-ahead or a concrete instruction: organize the next step, execute according to the instruction, and report the result.
+- Keep this directive visible during the manual run so agents do not lose the workflow context. Remove it when Jon ends the manual pass.
+
 # Per-prompt protocol — apply, don't perform.
 
 ## A. Memory (memory-vector only)

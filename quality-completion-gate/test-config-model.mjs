@@ -74,6 +74,15 @@ assert.ok(
   'memory-normalizer must reject content mutation settings'
 );
 
+const badMemoryNormalizerSourceTools = structuredClone(config);
+const memoryNormalizerWithDrift = hookById(badMemoryNormalizerSourceTools, 'memory-normalizer');
+memoryNormalizerWithDrift.settings.sourceTools = memoryNormalizerWithDrift.settings.sourceTools.filter((tool) => tool !== 'memory_update');
+const badMemoryNormalizerSourceToolsResult = validateConfig(badMemoryNormalizerSourceTools);
+assert.ok(
+  badMemoryNormalizerSourceToolsResult.errors.some((error) => error.includes('memory-normalizer match.tools must equal settings.sourceTools')),
+  'memory-normalizer must reject sourceTools drift from match.tools'
+);
+
 const badQualityAuthority = structuredClone(config);
 hookById(badQualityAuthority, 'quality-completion-gate').settings.authority = 'assistant-claims';
 const badQualityAuthorityResult = validateConfig(badQualityAuthority);
