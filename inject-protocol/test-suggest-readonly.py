@@ -34,7 +34,7 @@ def suggest_config() -> dict:
     }
 
 
-def run_suggest(db_path: str) -> subprocess.CompletedProcess[str]:
+def run_suggest(db_path: str, project: str = "all") -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -42,7 +42,7 @@ def run_suggest(db_path: str) -> subprocess.CompletedProcess[str]:
             SUGGEST,
             db_path,
             "memory",
-            "all",
+            project,
             "memory",
             json.dumps(suggest_config(), ensure_ascii=True),
         ],
@@ -68,6 +68,22 @@ def create_skill_db(db_path: str) -> None:
             "INSERT INTO skills_fts(rowid, name, description, content) VALUES(?, ?, ?, ?)",
             (cur.lastrowid, "memory-helper", "memory workflow helper", "memory recall and tagging support"),
         )
+        cur = con.execute(
+            "INSERT INTO skills(name, description, content, scope, curated) VALUES(?, ?, ?, ?, ?)",
+            ("memory-helper-project", "memory workflow helper", "memory recall and tagging support", "kai-chattr", 1),
+        )
+        con.execute(
+            "INSERT INTO skills_fts(rowid, name, description, content) VALUES(?, ?, ?, ?)",
+            (cur.lastrowid, "memory-helper-project", "memory workflow helper", "memory recall and tagging support"),
+        )
+        cur = con.execute(
+            "INSERT INTO skills(name, description, content, scope, curated) VALUES(?, ?, ?, ?, ?)",
+            ("memory-helper-other", "memory workflow helper", "memory recall and tagging support", "blockdata", 1),
+        )
+        con.execute(
+            "INSERT INTO skills_fts(rowid, name, description, content) VALUES(?, ?, ?, ?)",
+            (cur.lastrowid, "memory-helper-other", "memory workflow helper", "memory recall and tagging support"),
+        )
         con.commit()
     finally:
         con.close()
@@ -85,6 +101,21 @@ def test_suggest_reads_existing_db() -> None:
             raise AssertionError(f"suggest did not return fixture skill: {result.stdout}")
 
 
+def test_suggest_filters_and_prioritizes_project_scope_before_limit() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "skills.db")
+        create_skill_db(db_path)
+        result = run_suggest(db_path, project="kai-chattr")
+        if result.returncode != 0:
+            raise AssertionError(f"suggest failed unexpectedly\nstdout={result.stdout}\nstderr={result.stderr}")
+        rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        names = [row["name"] for row in rows]
+        if "memory-helper-other" in names:
+            raise AssertionError(f"suggest returned out-of-scope skill: {result.stdout}")
+        if not rows or rows[0]["name"] != "memory-helper-project":
+            raise AssertionError(f"suggest did not prioritize project-scoped skill: {result.stdout}")
+
+
 def test_missing_db_is_not_created_by_suggest() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         db_path = os.path.join(tmp, "missing-skills.db")
@@ -95,6 +126,7 @@ def test_missing_db_is_not_created_by_suggest() -> None:
 
 def main() -> int:
     test_suggest_reads_existing_db()
+    test_suggest_filters_and_prioritizes_project_scope_before_limit()
     test_missing_db_is_not_created_by_suggest()
     print("suggest read-only tests passed")
     return 0

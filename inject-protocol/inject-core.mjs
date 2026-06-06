@@ -52,16 +52,29 @@ function boundedCap(capChars) {
   return Math.max(0, Math.floor(cap));
 }
 
+function resolveBudget(value) {
+  const cap = Number(value);
+  if (!Number.isFinite(cap)) return Infinity;
+  return Math.max(0, Math.floor(cap));
+}
+
 function itemValue(item, key) {
   if (typeof item === 'string') return item.trim();
   if (item && typeof item === 'object') return (item[key] || '').toString().trim();
   return '';
 }
 
-function section(label, items) {
+function boundedBlock(text, cap) {
+  const value = (text || '').toString().trim();
+  if (!value) return '';
+  const limit = resolveBudget(cap);
+  return value.length > limit ? withMarkerWithinCap(value, limit) : value;
+}
+
+function section(label, items, cap = Infinity) {
   const lines = items.filter(Boolean);
   if (!label || !lines.length) return '';
-  return `${label}\n- ${lines.join('\n- ')}`;
+  return boundedBlock(`${label}\n- ${lines.join('\n- ')}`, cap);
 }
 
 function withMarkerWithinCap(output, cap) {
@@ -80,15 +93,16 @@ function withMarkerWithinCap(output, cap) {
   return boundedOutput ? `${boundedOutput}\n\n${TRUNCATION_MARKER}` : TRUNCATION_MARKER;
 }
 
-export function composeOutput(rules, suggested, memories, labels, capChars) {
+export function composeOutput(rules, suggested, memories, labels, capChars, budgets = {}, diagnostics = []) {
   const cap = boundedCap(capChars);
   const outputLabels = labels || {};
-  const base = (rules || '').toString().trim();
+  const base = boundedBlock(rules, budgets.protocolChars);
   if (base.length > cap) return withMarkerWithinCap(base, cap);
 
   const sections = [
-    section(outputLabels.skills, (suggested || []).map((item) => itemValue(item, 'name'))),
-    section(outputLabels.memory, (memories || []).map((item) => itemValue(item, 'text')))
+    section(outputLabels.diagnostics, diagnostics, budgets.diagnosticsChars),
+    section(outputLabels.skills, (suggested || []).map((item) => itemValue(item, 'name')), budgets.skillsChars),
+    section(outputLabels.memory, (memories || []).map((item) => itemValue(item, 'text')), budgets.memoryChars)
   ].filter(Boolean);
 
   let output = base;

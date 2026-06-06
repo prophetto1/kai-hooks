@@ -139,14 +139,18 @@ const py = (label, scriptPath, args) => {
       maxBuffer: PY_MAX_BUFFER,
       stdio: ['ignore', 'pipe', 'pipe']
     }).split('\n').filter(Boolean);
-    debug(`${label}: ${lines.length} row(s) in ${Date.now() - start}ms`);
-    return lines;
+    const elapsedMs = Date.now() - start;
+    debug(`${label}: ${lines.length} row(s) in ${elapsedMs}ms`);
+    return { ok: true, label, lines, elapsedMs };
   } catch (err) {
+    const elapsedMs = Date.now() - start;
     const stderr = clip(err.stderr);
     const stdout = clip(err.stdout);
     const details = stderr || stdout;
-    console.error(`[${ID}] ${label} failed after ${Date.now() - start}ms: ${err.message}${details ? `\n${details}` : ''}`);
-    return [];
+    const error = `${err.message}${details ? `\n${details}` : ''}`;
+    safeEvent('source-error', { label, elapsedMs, error });
+    console.error(`[${ID}] ${label} failed after ${elapsedMs}ms: ${error}`);
+    return { ok: false, label, lines: [], elapsedMs, error };
   }
 };
 
@@ -242,6 +246,27 @@ function parseObjects(lines) {
   return out;
 }
 
+function skippedSource(source, reason, data = {}) {
+  return { source, ok: true, skipped: true, reason, rows: [], ...data };
+}
+
+function sourceResult(source, result) {
+  return {
+    source,
+    ok: result.ok,
+    skipped: false,
+    rows: result.ok ? parseObjects(result.lines) : [],
+    elapsedMs: result.elapsedMs,
+    error: result.error || null
+  };
+}
+
+function sourceDiagnostics(results) {
+  return results
+    .filter((result) => result && !result.ok)
+    .map((result) => `${result.source}: ${clip(result.error, 320)}`);
+}
+
 function memoryFilterSql(filters) {
   return (filters || []).map((filter) => {
     const id = filter && filter.id;
@@ -252,7 +277,12 @@ function memoryFilterSql(filters) {
 
 function recall(t, proj) {
   const M = S.memory;
-  if (t.length < M.minTerms) return [];
+  if (t.length < M.minTerms) {
+    return skippedSource('memory', 'insufficient_terms', {
+      termCount: t.length,
+      minTerms: M.minTerms
+    });
+  }
   const q = t.map(w => `"${w}"`).join(' OR ');
   const config = {
     ftsTable: M.ftsTable,
@@ -264,7 +294,7 @@ function recall(t, proj) {
     scoring: M.scoring,
     crossProjectTag: SHARED.memoryTags.crossProjectTag
   };
-  return parseObjects(py('memory recall', join(here, 'recall.py'), [DB, q, proj || '', JSON.stringify(config)]));
+  return sourceResult('memory', py('memory recall', join(here, 'recall.py'), [DB, q, proj || '', JSON.stringify(config)]));
 }
 
 function skillNoise() {
@@ -279,7 +309,7 @@ function skillTerms(t) {
 function suggest(t, proj) {
   const K = S.skills;
   const st = skillTerms(t);
-  if (!st.length) return [];
+  if (!st.length) return skippedSource('skills', 'no_skill_terms');
   const q = st.map(w => `"${w}"`).join(' OR ');
   const config = {
     ftsTable: K.ftsTable,
@@ -288,21 +318,22 @@ function suggest(t, proj) {
     candidatePool: K.candidatePool,
     scoring: K.scoring
   };
-  const rows = parseObjects(py('skill suggest', join(here, 'suggest.py'), [DB, q, proj || '', st.join(' '), JSON.stringify(config)]));
+  const result = sourceResult('skills', py('skill suggest', join(here, 'suggest.py'), [DB, q, proj || '', st.join(' '), JSON.stringify(config)]));
   const seen = new Set();
   const out = [];
-  for (const row of rows) {
+  for (const row of result.rows) {
     if (!row.name || seen.has(row.name)) continue;
     seen.add(row.name);
     out.push(row);
   }
-  return out.slice(0, K.max);
+  return { ...result, rows: out.slice(0, K.max), skillTerms: st };
 }
 
 function outputLabels(proj) {
   const crossTag = SHARED.memoryTags.crossProjectTag;
   const scope = proj ? `, scope: ${proj}+${crossTag}` : '';
   return {
+    diagnostics: S.output.labels.diagnostics,
     skills: S.output.labels.skills,
     memory: S.output.labels.memory.replace('{scope}', scope)
   };
@@ -312,8 +343,8 @@ function selfTest() {
   const sample = process.argv.filter(x => !x.startsWith('--')).slice(2).join(' ') || 'optimize this hook system';
   const proj = project('E:/hooks'.replace(/\\/g, '/').toLowerCase());
   const extracted = terms(sample, []);
-  const suggested = suggest(extracted, proj);
-  const memories = recall(extracted, proj);
+  const skillResult = suggest(extracted, proj);
+  const memoryResult = recall(extracted, proj);
   console.log(JSON.stringify({
     id: ID,
     enabled: ENABLED,
@@ -327,19 +358,40 @@ function selfTest() {
     projectCount: SHARED.projects.entries.length,
     memoryScoring: S.memory.scoring,
     skillScoring: S.skills.scoring,
+    outputBudgets: S.output.budgets,
     samplePrompt: sample,
     extractedTerms: extracted,
     skillTerms: skillTerms(extracted),
-    suggestedSkills: suggested,
-    recalledMemories: memories.map(m => ({ score: m.score, signals: m.signals, text: m.text })),
+    sourceResults: {
+      skills: {
+        ok: skillResult.ok,
+        skipped: skillResult.skipped || false,
+        reason: skillResult.reason || null,
+        rowCount: skillResult.rows.length,
+        error: skillResult.error || null
+      },
+      memory: {
+        ok: memoryResult.ok,
+        skipped: memoryResult.skipped || false,
+        reason: memoryResult.reason || null,
+        rowCount: memoryResult.rows.length,
+        error: memoryResult.error || null
+      }
+    },
+    sourceDiagnostics: sourceDiagnostics([skillResult, memoryResult]),
+    suggestedSkills: skillResult.rows,
+    recalledMemories: memoryResult.rows.map(m => ({ score: m.score, signals: m.signals, text: m.text })),
     capChars: S.output.capChars
   }, null, 2));
 }
 
 function run() {
-  if (!ENABLED) return;
   if (process.argv.includes('--self-test')) {
     selfTest();
+    return;
+  }
+  if (!ENABLED) {
+    safeEvent('disabled-skip', { configPath: CONFIG_PATH });
     return;
   }
 
@@ -353,10 +405,31 @@ function run() {
   if (prompt) {
     const proj = project(getCwd(payload));
     const extracted = terms(prompt, recentUserText(payload, prompt, S.terms.contextPrompts));
-    const suggested = suggest(extracted, proj);
-    const memories = recall(extracted, proj);
+    const skillResult = suggest(extracted, proj);
+    const memoryResult = recall(extracted, proj);
     const labels = outputLabels(proj);
-    out = composeOutput(rules, suggested, memories, labels, S.output.capChars);
+    const diagnostics = sourceDiagnostics([skillResult, memoryResult]);
+    safeEvent('source-summary', {
+      project: proj || null,
+      termCount: extracted.length,
+      skillTerms: skillResult.skillTerms || [],
+      skillOk: skillResult.ok,
+      skillSkipped: skillResult.skipped || false,
+      skillRows: skillResult.rows.length,
+      memoryOk: memoryResult.ok,
+      memorySkipped: memoryResult.skipped || false,
+      memoryRows: memoryResult.rows.length,
+      diagnosticsCount: diagnostics.length
+    });
+    out = composeOutput(
+      rules,
+      skillResult.rows,
+      memoryResult.rows,
+      labels,
+      S.output.capChars,
+      S.output.budgets,
+      diagnostics
+    );
   }
   if (!out) return;
   process.stdout.write(JSON.stringify({

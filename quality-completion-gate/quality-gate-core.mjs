@@ -77,7 +77,7 @@ export function normalizePath(value) {
   return String(value || '').trim().replaceAll('\\', '/');
 }
 
-function normalizeAbsolute(value) {
+export function normalizeAbsolute(value) {
   return normalizePath(resolve(String(value || '')));
 }
 
@@ -99,13 +99,18 @@ export function loadVerifyManifest(runtime) {
 
 export function gitRoot(cwd, timeoutMs) {
   try {
-    return normalizeAbsolute(execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
+    const value = normalizeAbsolute(execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
       encoding: 'utf8',
       timeout: timeoutMs,
       stdio: ['ignore', 'pipe', 'pipe']
     }).trim());
-  } catch {
-    return '';
+    return { ok: true, value, error: '' };
+  } catch (error) {
+    return {
+      ok: false,
+      value: '',
+      error: `${error.message || error}${error.stderr ? `\n${error.stderr}` : ''}`.trim()
+    };
   }
 }
 
@@ -130,9 +135,13 @@ export function changedFiles(repoRoot, timeoutMs) {
       timeout: timeoutMs,
       stdio: ['ignore', 'pipe', 'pipe']
     });
-    return [...new Set(parseStatusFiles(status))].sort();
-  } catch {
-    return [];
+    return { ok: true, value: [...new Set(parseStatusFiles(status))].sort(), error: '' };
+  } catch (error) {
+    return {
+      ok: false,
+      value: [],
+      error: `${error.message || error}${error.stderr ? `\n${error.stderr}` : ''}`.trim()
+    };
   }
 }
 
@@ -232,14 +241,24 @@ export function commandsForDomains(repoEntry, domainNames) {
   return commands;
 }
 
-export function runVerifyCommand(repoRoot, command, defaultTimeoutMs) {
+function commandTimeout(command, defaultTimeoutMs, remainingBudgetMs) {
+  const configured = command.timeoutMs || defaultTimeoutMs;
+  if (!Number.isFinite(remainingBudgetMs)) {
+    return { timeoutMs: configured, budgetLimited: false };
+  }
+  const bounded = Math.max(1, Math.min(configured, Math.floor(remainingBudgetMs)));
+  return { timeoutMs: bounded, budgetLimited: bounded < configured };
+}
+
+export function runVerifyCommand(repoRoot, command, defaultTimeoutMs, remainingBudgetMs = Infinity) {
   const cwd = command.cwd ? join(repoRoot, command.cwd) : repoRoot;
   const startedAt = Date.now();
+  const { timeoutMs, budgetLimited } = commandTimeout(command, defaultTimeoutMs, remainingBudgetMs);
   try {
     const output = execSync(command.command, {
       cwd,
       encoding: 'utf8',
-      timeout: command.timeoutMs || defaultTimeoutMs,
+      timeout: timeoutMs,
       maxBuffer: command.maxBuffer || 1024 * 1024,
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -261,7 +280,11 @@ export function runVerifyCommand(repoRoot, command, defaultTimeoutMs) {
       cwd,
       ms: Date.now() - startedAt,
       status: error.status ?? null,
-      output: `${error.stdout || ''}${error.stderr || ''}`.slice(-4000) || error.message
+      output: (
+        budgetLimited
+          ? `Total Stop budget exhausted while running this command.\n${error.stdout || ''}${error.stderr || ''}`
+          : `${error.stdout || ''}${error.stderr || ''}`
+      ).slice(-4000) || error.message
     };
   }
 }

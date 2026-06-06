@@ -133,9 +133,18 @@ def error_key(text):
     return re.sub(r"\s+", " ", normalized)[:80]
 
 
+def _table_exists(con, table):
+    return con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone() is not None
+
+
 def consecutive_failures(con, table, session_id, op_key, lookback):
     """Walk this session's events newest-first; for rows matching op_key, count the trailing
     run of same-error failures. A success (or a different error fingerprint) breaks the run."""
+    if not _table_exists(con, table):
+        return 0, None  # telemetry table not created yet -> no failure history, allow silently
     rows = con.execute(
         f"SELECT tool_name, target, status, detail FROM {table} "
         "WHERE session_id=? ORDER BY ts DESC, id DESC LIMIT ?",

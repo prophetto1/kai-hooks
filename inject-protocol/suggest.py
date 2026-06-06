@@ -101,16 +101,30 @@ def main(argv):
     required_overlap = min(scoring["min_overlap"], len(terms)) if terms else 1
     field_boosts = scoring["field_boosts"]
 
-    sql = (
-        f"SELECT s.name, bm25({fts_table}, {field_boosts['name']}, {field_boosts['description']}, {field_boosts['content']}) sc, "
-        f"s.scope, lower(coalesce(s.name,'')||' '||coalesce(s.description,'')||' '||coalesce(s.content,'')) txt "
-        f"FROM {fts_table} f JOIN {join_table} s ON s.id=f.rowid "
-        f"WHERE {fts_table} MATCH ? AND s.curated=1 ORDER BY sc LIMIT {candidate_pool}"
-    )
+    if project:
+        sql = (
+            f"SELECT s.name, bm25({fts_table}, {field_boosts['name']}, {field_boosts['description']}, {field_boosts['content']}) sc, "
+            f"s.scope, lower(coalesce(s.name,'')||' '||coalesce(s.description,'')||' '||coalesce(s.content,'')) txt, "
+            f"CASE WHEN s.scope=? THEN 0 ELSE 1 END scope_rank "
+            f"FROM {fts_table} f JOIN {join_table} s ON s.id=f.rowid "
+            f"WHERE {fts_table} MATCH ? AND s.curated=1 AND (s.scope=? OR s.scope='all') "
+            f"ORDER BY scope_rank, sc LIMIT {candidate_pool}"
+        )
+        params = [project, query, project]
+    else:
+        sql = (
+            f"SELECT s.name, bm25({fts_table}, {field_boosts['name']}, {field_boosts['description']}, {field_boosts['content']}) sc, "
+            f"s.scope, lower(coalesce(s.name,'')||' '||coalesce(s.description,'')||' '||coalesce(s.content,'')) txt, "
+            f"0 scope_rank "
+            f"FROM {fts_table} f JOIN {join_table} s ON s.id=f.rowid "
+            f"WHERE {fts_table} MATCH ? AND s.curated=1 AND s.scope='all' "
+            f"ORDER BY sc LIMIT {candidate_pool}"
+        )
+        params = [query]
 
     conn = connect_readonly(db)
     try:
-        rows = conn.execute(sql, [query]).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     finally:
         conn.close()
 
@@ -123,7 +137,7 @@ def main(argv):
         return 0
 
     output = []
-    for name, score, scope, text in rows:
+    for name, score, scope, text, scope_rank in rows:
         if scope != "all" and scope != project:
             continue
         count = overlap_count(text, terms)
@@ -141,10 +155,11 @@ def main(argv):
                 "fts": fts_score,
                 "overlap": overlap_score,
                 "scope": scope,
+                "scopeRank": scope_rank,
             },
         })
 
-    output.sort(key=lambda row: -row["score"])
+    output.sort(key=lambda row: (row["signals"]["scopeRank"], -row["score"]))
     if output:
         top_final_score = output[0]["score"]
         final_floor = max(scoring["min_final_score"], top_final_score * scoring["relative_floor"] / 100.0)

@@ -58,6 +58,14 @@ assert.ok(
   'skill scoring signal weights must sum to 1.0'
 );
 
+const badInjectBudgets = structuredClone(config);
+badInjectBudgets.hooks[0].settings.output.budgets.memoryChars = badInjectBudgets.hooks[0].settings.output.capChars;
+const badInjectBudgetsResult = validateConfig(badInjectBudgets);
+assert.ok(
+  badInjectBudgetsResult.errors.some((error) => error.includes('inject-protocol output.budgets total must be <= capChars')),
+  'inject-protocol section budgets must fit under capChars'
+);
+
 const badComplexScript = structuredClone(config);
 hookById(badComplexScript, 'inject-protocol-complex').script.path = 'inject-protocol/inject-protocol.mjs';
 const badComplexScriptResult = validateConfig(badComplexScript);
@@ -89,6 +97,22 @@ const badQualityAuthorityResult = validateConfig(badQualityAuthority);
 assert.ok(
   badQualityAuthorityResult.errors.some((error) => error.includes('quality-completion-gate settings.authority must be exit-codes-only')),
   'quality-completion-gate authority must remain exit-code based'
+);
+
+const badQualityLoopThreshold = structuredClone(config);
+hookById(badQualityLoopThreshold, 'quality-completion-gate').settings.maxRepeatedFailureBlocks = 0;
+const badQualityLoopThresholdResult = validateConfig(badQualityLoopThreshold);
+assert.ok(
+  badQualityLoopThresholdResult.errors.some((error) => error.includes('quality-completion-gate settings.maxRepeatedFailureBlocks invalid')),
+  'quality-completion-gate loop threshold must be positive'
+);
+
+const badQualityBudget = structuredClone(config);
+hookById(badQualityBudget, 'quality-completion-gate').settings.totalBudgetMs = 0;
+const badQualityBudgetResult = validateConfig(badQualityBudget);
+assert.ok(
+  badQualityBudgetResult.errors.some((error) => error.includes('quality-completion-gate settings.totalBudgetMs invalid')),
+  'quality-completion-gate total budget must be positive'
 );
 
 const badThinkingTools = structuredClone(config);

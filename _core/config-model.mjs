@@ -176,12 +176,22 @@ function definitions() {
           },
         }),
         output: objectSchema({
-          required: ['capChars', 'labels'],
+          required: ['capChars', 'budgets', 'labels'],
           properties: {
             capChars: ref('positiveInteger'),
-            labels: objectSchema({
-              required: ['skills', 'memory'],
+            budgets: objectSchema({
+              required: ['protocolChars', 'diagnosticsChars', 'skillsChars', 'memoryChars'],
               properties: {
+                protocolChars: ref('positiveInteger'),
+                diagnosticsChars: ref('positiveInteger'),
+                skillsChars: ref('positiveInteger'),
+                memoryChars: ref('positiveInteger'),
+              },
+            }),
+            labels: objectSchema({
+              required: ['diagnostics', 'skills', 'memory'],
+              properties: {
+                diagnostics: ref('nonEmptyString'),
                 skills: ref('nonEmptyString'),
                 memory: ref('nonEmptyString'),
               },
@@ -489,6 +499,19 @@ function validateSkillsScoring(errors, scoring) {
   }
 }
 
+function validateOutputBudgets(errors, output, path) {
+  const budgets = output?.budgets || {};
+  const values = [
+    budgets.protocolChars,
+    budgets.diagnosticsChars,
+    budgets.skillsChars,
+    budgets.memoryChars
+  ];
+  if (positiveInteger(output?.capChars) && values.every(positiveInteger)) {
+    pushIf(errors, values.reduce((total, value) => total + value, 0) <= output.capChars, `${path}.budgets total must be <= capChars`);
+  }
+}
+
 function hookById(config, id) {
   return Array.isArray(config.hooks) ? config.hooks.find((hook) => hook && hook.id === id) : null;
 }
@@ -546,6 +569,12 @@ function validateInjectProtocol(config, errors) {
   pushIf(errors, TOKENIZER_CONFIG.allowedFlags.includes(settings.terms?.tokenRegexFlags), 'inject-protocol terms.tokenRegexFlags invalid');
   pushIf(errors, validTokenRegex(settings.terms), 'inject-protocol token regex invalid');
   pushIf(errors, positiveInteger(settings.output?.capChars), 'inject-protocol output.capChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.protocolChars), 'inject-protocol output.budgets.protocolChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.diagnosticsChars), 'inject-protocol output.budgets.diagnosticsChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.skillsChars), 'inject-protocol output.budgets.skillsChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.memoryChars), 'inject-protocol output.budgets.memoryChars invalid');
+  validateOutputBudgets(errors, settings.output, 'inject-protocol output');
+  pushIf(errors, typeof settings.output?.labels?.diagnostics === 'string', 'inject-protocol output.labels.diagnostics missing');
   pushIf(errors, typeof settings.output?.labels?.skills === 'string', 'inject-protocol output.labels.skills missing');
   pushIf(errors, typeof settings.output?.labels?.memory === 'string', 'inject-protocol output.labels.memory missing');
 
@@ -590,6 +619,12 @@ function validateInjectProtocolComplex(config, errors) {
   pushIf(errors, TOKENIZER_CONFIG.allowedFlags.includes(settings.terms?.tokenRegexFlags), 'inject-protocol-complex terms.tokenRegexFlags invalid');
   pushIf(errors, validTokenRegex(settings.terms), 'inject-protocol-complex token regex invalid');
   pushIf(errors, positiveInteger(settings.output?.capChars), 'inject-protocol-complex output.capChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.protocolChars), 'inject-protocol-complex output.budgets.protocolChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.diagnosticsChars), 'inject-protocol-complex output.budgets.diagnosticsChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.skillsChars), 'inject-protocol-complex output.budgets.skillsChars invalid');
+  pushIf(errors, positiveInteger(settings.output?.budgets?.memoryChars), 'inject-protocol-complex output.budgets.memoryChars invalid');
+  validateOutputBudgets(errors, settings.output, 'inject-protocol-complex output');
+  pushIf(errors, typeof settings.output?.labels?.diagnostics === 'string', 'inject-protocol-complex output.labels.diagnostics missing');
   pushIf(errors, typeof settings.output?.labels?.skills === 'string', 'inject-protocol-complex output.labels.skills missing');
   pushIf(errors, typeof settings.output?.labels?.memory === 'string', 'inject-protocol-complex output.labels.memory missing');
 
@@ -762,6 +797,8 @@ function validateQualityCompletionGate(config, errors) {
   const s = hook.settings || {};
   pushIf(errors, typeof s.verifyManifest === 'string' && s.verifyManifest.length > 0, 'quality-completion-gate settings.verifyManifest missing');
   pushIf(errors, s.authority === 'exit-codes-only', 'quality-completion-gate settings.authority must be exit-codes-only');
+  pushIf(errors, positiveInteger(s.maxRepeatedFailureBlocks), 'quality-completion-gate settings.maxRepeatedFailureBlocks invalid');
+  pushIf(errors, positiveInteger(s.totalBudgetMs), 'quality-completion-gate settings.totalBudgetMs invalid');
   pushIf(errors, nonEmptyStringArray(s.inputs), 'quality-completion-gate settings.inputs must be a non-empty string array');
   pushIf(errors, nonEmptyStringArray(s.nonAuthority), 'quality-completion-gate settings.nonAuthority must be a non-empty string array');
 }

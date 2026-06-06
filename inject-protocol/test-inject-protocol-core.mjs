@@ -41,12 +41,31 @@ test('composeOutput caps at section boundaries with explicit marker', () => {
   assert.ok(!output.includes('memory text'));
 });
 
+test('composeOutput applies per-section budgets before the total cap', () => {
+  const labels = { diagnostics: '## Diagnostics', skills: '## Skills', memory: '## Memory' };
+  const output = composeOutput(
+    'RULES',
+    [{ name: 'systematic-debugging' }],
+    [{ text: 'memory text '.repeat(50).trim() }],
+    labels,
+    500,
+    { protocolChars: 100, diagnosticsChars: 100, skillsChars: 100, memoryChars: 120 },
+    ['memory recall failed because sqlite is locked']
+  );
+
+  assert.match(output, /## Diagnostics/);
+  assert.match(output, /## Skills/);
+  assert.match(output, /## Memory/);
+  assert.ok(output.length <= 500);
+  assert.match(output, new RegExp(TRUNCATION_MARKER.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+});
+
 test('active injector is wired to shared core helpers', () => {
   const source = readFileSync(new URL('./inject-protocol.mjs', import.meta.url), 'utf8');
 
   assert.match(source, /from '\.\/inject-core\.mjs'/);
   assert.match(source, /projectFromCwd\(cwd,\s*SHARED\.projects\.entries\)/);
-  assert.match(source, /composeOutput\(rules,\s*suggested,\s*memories,\s*labels,\s*S\.output\.capChars\)/);
+  assert.match(source, /composeOutput\(\s*rules,\s*skillResult\.rows,\s*memoryResult\.rows,\s*labels,\s*S\.output\.capChars,\s*S\.output\.budgets,\s*diagnostics\s*\)/);
   assert.doesNotMatch(source, /c\.includes\('\/' \+ token\)/);
 });
 
@@ -55,6 +74,6 @@ test('complex injector is wired to shared core helpers', () => {
 
   assert.match(source, /from '\.\.\/inject-protocol\/inject-core\.mjs'/);
   assert.match(source, /projectFromCwd\(cwd,\s*SHARED\.projects\.entries\)/);
-  assert.match(source, /composeOutput\(rules,\s*suggested,\s*memories,\s*labels,\s*S\.output\.capChars\)/);
+  assert.match(source, /composeOutput\(\s*rules,\s*skillResult\.rows,\s*memoryResult\.rows,\s*labels,\s*S\.output\.capChars,\s*S\.output\.budgets,\s*diagnostics\s*\)/);
   assert.doesNotMatch(source, /c\.includes\('\/' \+ token\)/);
 });

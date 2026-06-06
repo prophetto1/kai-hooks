@@ -49,7 +49,6 @@ _Review_
 _Code quality / repo mechanics_
 - `refactor` — direct refactoring workflow: improve structure without changing behavior.
 - `performant-code` — performance-oriented implementation work for large data, hot paths, or tight resource constraints.
-- `initialize-depcruiser-migrations` — initialize one current-version dependency-cruiser migration with donor trace, source manifest, state-backed arming, guarded target paths, and active closure verification.
 - `git-workflow` — branches, commits, PRs, merges, conflicts, and repository hygiene.
 
 _Verify / finish_

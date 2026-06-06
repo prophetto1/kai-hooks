@@ -48,11 +48,12 @@
       "match": { "tools": ["*"] },
       "script": { "path": "inject-protocol/inject-protocol.mjs", "runtime": "node" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": true,
+      "enabled": false,
       "failPolicy": "open",
       "settings": {
-        "_model": "Three stages: terms (parse the prompt) -> sources (compose injected content from protocol + memory + skills) -> output (cap + labels).",
+        "_model": "Three stages: terms (parse the prompt) -> sources (compose injected content from protocol + skills + memory) -> output (cap + labels).",
         "terms": {
+          "_note": "Terms are extracted search words from the current prompt plus recent user prompts. minLen is the shortest token kept. max is the maximum extracted terms passed into memory and skill search. contextPrompts is how many earlier user prompts are included.",
           "minLen": 3,
           "max": 8,
           "contextPrompts": 2,
@@ -61,21 +62,23 @@
         },
         "sources": {
           "protocol": {
-            "file": "per-prompt-protocol.md",
+            "file": "per-prompt-protocol_original.md",
             "_note": "Static A-E rules text. Injected verbatim as the BASE of every output; memory + skills are appended."
           },
           "memory": {
+            "_note": "Memory recall funnel: minTerms is the minimum extracted query terms required before recall runs at all. candidatePool is raw memory hits to fetch from SQLite full-text search before reranking. max is final memories injected into the prompt.",
             "ftsTable": "memory_content_fts",
             "joinTable": "memories",
             "filters": [
               { "id": "not-deleted" },
               { "id": "not-superseded" }
             ],
-            "max": 3,
+            "max": 2,
             "snippetChars": 1500,
-            "minTerms": 2,
+            "minTerms": 4,
             "candidatePool": 7,
             "scoring": {
+              "_note": "Memory reranking: FTS match strength, recency, and confidence are converted to 0..100 scores, combined by weight, then filtered by relativeFloor before final output.",
               "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
               "missingSignalPolicy": "drop-candidate",
               "minFinalScore": 0,
@@ -89,11 +92,13 @@
             "explain": { "enabled": true, "includeInPrompt": false, "includeInSelfTest": true }
           },
           "skills": {
+            "_note": "Skill suggestion funnel: candidatePool is raw skill hits to fetch before reranking. max is final suggested skills injected into the prompt.",
             "ftsTable": "skills_fts",
             "joinTable": "skills",
-            "max": 2,
-            "candidatePool": 7,
+            "max": 1,
+            "candidatePool": 10,
             "scoring": {
+              "_note": "Skill reranking: FTS favors name/description/content by fieldBoosts; overlap checks how many extracted terms appear in the skill text.",
               "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
               "missingSignalPolicy": "drop-candidate",
               "minFinalScore": 0,
@@ -102,11 +107,17 @@
                 "fts": {
                   "weight": 0.80,
                   "transform": "top-candidate-relative",
-                  "fieldBoosts": { "name": 0.20, "description": 0.50, "content": 0.30 }
+                  "fieldBoosts": { "name": 0.45, "description": 0.40, "content": 0.15 }
                 },
-                "overlap": { "weight": 0.20, "transform": "matched-terms-ratio", "minTerms": 2 }
+                "overlap": {
+                  "_note": "minTerms here is different from memory.minTerms. It means a skill candidate must overlap with this many extracted terms to survive skill filtering.",
+                  "weight": 0.20,
+                  "transform": "matched-terms-ratio",
+                  "minTerms": 2
+                }
               }
             },
+            "_noiseTermsNote": "Terms in this list are ignored for skill search because they are too common or too vague to identify the right skill.",
             "noiseTerms": [
               "all", "also", "actually", "again", "anything", "basically", "before", "being", "cant",
               "check", "checking", "ccs", "coding", "detail", "every", "explain", "filler", "first",
@@ -118,8 +129,16 @@
           }
         },
         "output": {
-          "capChars": 9500,
+          "_note": "capChars is the maximum hidden additional context emitted by this hook. budgets cap each section before the whole output cap is applied.",
+          "capChars": 9000,
+          "budgets": {
+            "protocolChars": 3200,
+            "diagnosticsChars": 1200,
+            "skillsChars": 900,
+            "memoryChars": 3600
+          },
           "labels": {
+            "diagnostics": "## Hook source diagnostics",
             "skills": "## Suggested skill(s) for this task",
             "memory": "## Recalled memories (auto{scope} -- verify before relying)"
           }
@@ -149,7 +168,7 @@
         },
         "sources": {
           "protocol": {
-            "file": "per-prompt-protocol.md",
+            "file": "../inject-protocol/per-prompt-protocol_original.md",
             "_note": "Static A-E rules text. Injected verbatim as the BASE of every output; memory + skills are appended."
           },
           "memory": {
@@ -206,8 +225,15 @@
           }
         },
         "output": {
-          "capChars": 9500,
+          "capChars": 9000,
+          "budgets": {
+            "protocolChars": 3200,
+            "diagnosticsChars": 1200,
+            "skillsChars": 1000,
+            "memoryChars": 3500
+          },
           "labels": {
+            "diagnostics": "## Hook source diagnostics",
             "skills": "## Suggested skill(s) for this task",
             "memory": "## Recalled memories (auto{scope} -- verify before relying)"
           }
@@ -243,7 +269,7 @@
       "match": { "tools": ["*"] },
       "script": { "path": "thinking-gate/thinking-gate.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": true,
+      "enabled": false,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
@@ -330,7 +356,7 @@
       },
       "script": { "path": "memory-normalizer/normalize-after-store.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": true,
+      "enabled": false,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
@@ -407,7 +433,7 @@
       "match": { "tools": ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "mcp__plugin_context-mode_context-mode__ctx_batch_execute", "mcp__plugin_context-mode_context-mode__ctx_execute", "mcp__plugin_context-mode_context-mode__ctx_execute_file", "mcp__plugin_context-mode_context-mode__ctx_search", "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index"] },
       "script": { "path": "loop-safety/loop-guard.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": true,
+      "enabled": false,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
@@ -432,11 +458,13 @@
       "match": { "tools": ["*"] },
       "script": { "path": "quality-completion-gate/quality-completion-gate.mjs", "runtime": "node" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": true,
+      "enabled": false,
       "failPolicy": "open",
       "settings": {
         "verifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
         "authority": "exit-codes-only",
+        "maxRepeatedFailureBlocks": 3,
+        "totalBudgetMs": 90000,
         "inputs": ["git status --porcelain=v1", "quality-completion-gate/quality-verify-manifest.json"],
         "nonAuthority": ["PostToolUse telemetry", "assistant claims", "command text heuristics"]
       }
@@ -451,7 +479,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "_core/generate-config-schema.mjs", "runtime": "node" },
-      "enabled": true,
+      "enabled": false,
       "settings": {
         "model": "_core/config-model.mjs",
         "output": "config.schema.json"
@@ -465,7 +493,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "_core/validate-runtime-hooks.mjs", "runtime": "node" },
-      "enabled": true,
+      "enabled": false,
       "settings": {
         "model": "_core/config-model.mjs",
         "config": "config.json",
@@ -480,7 +508,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "inject-protocol/index-skills.py", "runtime": "python" },
-      "enabled": true,
+      "enabled": false,
       "settings": {
         "scanRoots": [
           { "path": "E:/__skills", "source": "warehouse", "scope": "all" }
@@ -499,7 +527,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "memory-normalizer/normalize-memory-tags.py", "runtime": "python" },
-      "enabled": true,
+      "enabled": false,
       "settings": {
         "activeSlugs": ["blockdata", "kai-chattr", "kai"],
         "_activeSlugsNote": "= shared.projects where kind=='rebuild'. Listed for the python script; keep in sync with shared.projects.",
@@ -509,17 +537,6 @@
         "reportUntagged": true,
         "writes": { "column": "tags", "dryRunDefault": true }
       }
-    },
-
-    {
-      "id": "validate-runtime-hooks",
-      "name": "Runtime Hook Validator",
-      "description": "Validates config.json, config.schema.json, hook/script paths, and the config-controlled inject/indexer settings.",
-      "category": "maintenance",
-      "trigger": "manual",
-      "script": { "path": "_core/validate-runtime-hooks.mjs", "runtime": "node" },
-      "enabled": true,
-      "settings": {}
     }
   ],
 

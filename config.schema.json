@@ -464,19 +464,48 @@
           "type": "object",
           "required": [
             "capChars",
+            "budgets",
             "labels"
           ],
           "properties": {
             "capChars": {
               "$ref": "#/$defs/positiveInteger"
             },
+            "budgets": {
+              "type": "object",
+              "required": [
+                "protocolChars",
+                "diagnosticsChars",
+                "skillsChars",
+                "memoryChars"
+              ],
+              "properties": {
+                "protocolChars": {
+                  "$ref": "#/$defs/positiveInteger"
+                },
+                "diagnosticsChars": {
+                  "$ref": "#/$defs/positiveInteger"
+                },
+                "skillsChars": {
+                  "$ref": "#/$defs/positiveInteger"
+                },
+                "memoryChars": {
+                  "$ref": "#/$defs/positiveInteger"
+                }
+              },
+              "additionalProperties": false
+            },
             "labels": {
               "type": "object",
               "required": [
+                "diagnostics",
                 "skills",
                 "memory"
               ],
               "properties": {
+                "diagnostics": {
+                  "$ref": "#/$defs/nonEmptyString"
+                },
                 "skills": {
                   "$ref": "#/$defs/nonEmptyString"
                 },
