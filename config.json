@@ -48,7 +48,7 @@
       "match": { "tools": ["*"] },
       "script": { "path": "inject-protocol/inject-protocol.mjs", "runtime": "node" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
+      "enabled": true,
       "failPolicy": "open",
       "settings": {
         "_model": "Three stages: terms (parse the prompt) -> sources (compose injected content from protocol + skills + memory) -> output (cap + labels).",
@@ -147,101 +147,6 @@
     },
 
     {
-      "id": "inject-protocol-complex",
-      "name": "Protocol + Recall Injector — Complex profile",
-      "description": "Push the A-E protocol + ranked memory recall + curated skill suggestion into every prompt. Fail-open.",
-      "category": "push",
-      "event": "UserPromptSubmit",
-      "match": { "tools": ["*"] },
-      "script": { "path": "inject-protocol-complex/inject-protocol-complex.mjs", "runtime": "node" },
-      "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
-      "failPolicy": "open",
-      "settings": {
-        "_model": "Three stages: terms (parse the prompt) -> sources (compose injected content from protocol + memory + skills) -> output (cap + labels).",
-        "terms": {
-          "minLen": 3,
-          "max": 8,
-          "contextPrompts": 2,
-          "tokenCharClass": "\\p{L}\\p{N}_-",
-          "tokenRegexFlags": "gu"
-        },
-        "sources": {
-          "protocol": {
-            "file": "../inject-protocol/per-prompt-protocol_original.md",
-            "_note": "Static A-E rules text. Injected verbatim as the BASE of every output; memory + skills are appended."
-          },
-          "memory": {
-            "ftsTable": "memory_content_fts",
-            "joinTable": "memories",
-            "filters": [
-              { "id": "not-deleted" },
-              { "id": "not-superseded" }
-            ],
-            "max": 3,
-            "snippetChars": 1500,
-            "minTerms": 2,
-            "candidatePool": 7,
-            "scoring": {
-              "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
-              "missingSignalPolicy": "drop-candidate",
-              "minFinalScore": 0,
-              "relativeFloor": 60,
-              "signals": {
-                "fts": { "weight": 0.50, "transform": "top-candidate-relative" },
-                "recency": { "weight": 0.40, "transform": "half-life-decay", "halfLifeDays": 5 },
-                "confidence": { "weight": 0.10, "transform": "stored-confidence" }
-              }
-            },
-            "explain": { "enabled": false, "includeInPrompt": false, "includeInSelfTest": true }
-          },
-          "skills": {
-            "ftsTable": "skills_fts",
-            "joinTable": "skills",
-            "max": 2,
-            "candidatePool": 7,
-            "scoring": {
-              "scoreScale": { "min": 0, "max": 100, "baseline": 0 },
-              "missingSignalPolicy": "drop-candidate",
-              "minFinalScore": 0,
-              "relativeFloor": 70,
-              "signals": {
-                "fts": {
-                  "weight": 0.80,
-                  "transform": "top-candidate-relative",
-                  "fieldBoosts": { "name": 0.20, "description": 0.50, "content": 0.30 }
-                },
-                "overlap": { "weight": 0.20, "transform": "matched-terms-ratio", "minTerms": 2 }
-              }
-            },
-            "noiseTerms": [
-              "all", "also", "actually", "again", "anything", "basically", "before", "being", "cant",
-              "check", "checking", "ccs", "coding", "detail", "every", "explain", "filler", "first",
-              "frustrated", "generic", "help", "improve", "into", "ive", "language", "maybe", "much",
-              "optimized", "please", "proceed", "really", "scan", "start", "stuff", "sure", "system",
-              "thing", "things", "use", "using", "want", "words", "word", "work", "working"
-            ],
-            "explain": { "enabled": false, "includeInPrompt": false, "includeInSelfTest": true }
-          }
-        },
-        "output": {
-          "capChars": 9000,
-          "budgets": {
-            "protocolChars": 3200,
-            "diagnosticsChars": 1200,
-            "skillsChars": 1000,
-            "memoryChars": 3500
-          },
-          "labels": {
-            "diagnostics": "## Hook source diagnostics",
-            "skills": "## Suggested skill(s) for this task",
-            "memory": "## Recalled memories (auto{scope} -- verify before relying)"
-          }
-        }
-      }
-    },
-
-    {
       "id": "hook-telemetry",
       "name": "Hook Telemetry Logger",
       "description": "PostToolUse + PostToolUseFailure logger: append every tool firing to hook_events in the dedicated hooks DB (shared.paths.hooksDb). Status is event-derived (PostToolUseFailure=error; PostToolUse=ok unless the response envelope structurally signals an error) — no free-text scan. Observability substrate for loop-safety. Honors enabled/failPolicy/match via _core/hook_runtime.py. Fail-open, never blocks.",
@@ -269,7 +174,7 @@
       "match": { "tools": ["*"] },
       "script": { "path": "thinking-gate/thinking-gate.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
+      "enabled": true,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
@@ -356,7 +261,7 @@
       },
       "script": { "path": "memory-normalizer/normalize-after-store.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
+      "enabled": true,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
@@ -433,7 +338,7 @@
       "match": { "tools": ["Bash", "Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "mcp__plugin_context-mode_context-mode__ctx_batch_execute", "mcp__plugin_context-mode_context-mode__ctx_execute", "mcp__plugin_context-mode_context-mode__ctx_execute_file", "mcp__plugin_context-mode_context-mode__ctx_search", "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index"] },
       "script": { "path": "loop-safety/loop-guard.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
+      "enabled": true,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
@@ -468,6 +373,49 @@
         "inputs": ["git status --porcelain=v1", "quality-completion-gate/quality-verify-manifest.json"],
         "nonAuthority": ["PostToolUse telemetry", "assistant claims", "command text heuristics"]
       }
+    },
+
+    {
+      "id": "browser-verify-gate",
+      "name": "Browser Verification Gate",
+      "description": "Stop gate: for large turns (> minToolUses tool calls this turn) require an in-browser Playwright verification (navigate + snapshot/screenshot) before completion. Reads hook_events telemetry to count the turn and detect browser use; blocks via Stop decision until verified, then releases. Loop-safe (maxRepeatedBlocks) and fail-open.",
+      "category": "gate",
+      "event": "Stop",
+      "match": { "tools": ["*"] },
+      "script": { "path": "browser-verify-gate/browser-verify-gate.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": false,
+      "failPolicy": "open",
+      "settings": {
+        "table": "hook_events",
+        "minToolUses": 15,
+        "maxRepeatedBlocks": 2,
+        "requireSnapshot": true,
+        "telemetryHookId": "hook-telemetry",
+        "navigatePatterns": ["browser_navigate", "navigate_page"],
+        "inspectPatterns": ["browser_snapshot", "take_snapshot", "browser_take_screenshot", "take_screenshot"],
+        "stateDir": ".state/browser-verify-gate",
+        "_note": "Large-turn in-browser verification gate. minToolUses = the 'larger than most tasks' threshold (tool firings this turn, counted from hook_events). requireSnapshot=true needs a navigate AND a snapshot/screenshot this turn. Depends on broad hook-telemetry. enabled=false until wired in settings.json/config.toml (+ Codex /hooks trust + Claude restart)."
+      }
+    },
+
+    {
+      "id": "frontend-design-gate",
+      "name": "Frontend Design Gate",
+      "description": "Stop gate: block completion when the current change ADDS raw HTML primitives (<button>/<input>/<select>/<textarea>) in app code where the repo design system already provides a components/ui/<name>.tsx component. Changed-lines only (git diff vs HEAD + untracked), never the existing backlog. Reads git, not telemetry. Loop-safe (maxRepeatedBlocks) and fail-open.",
+      "category": "gate",
+      "event": "Stop",
+      "match": { "tools": ["*"] },
+      "script": { "path": "frontend-design-gate/frontend-design-gate.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": false,
+      "failPolicy": "open",
+      "settings": {
+        "primitives": { "button": "button", "input": "input", "select": "select", "textarea": "textarea" },
+        "maxRepeatedBlocks": 2,
+        "stateDir": ".state/frontend-design-gate",
+        "_note": "Per-repo design-system inventory is derived at runtime from each repo's components/ui/*.tsx; a primitive is enforced only when its component exists. Changed-lines regex with string/comment stripping (v1; AST later). enabled=false until wired into settings.json Stop + validated."
+      }
     }
   ],
 
@@ -479,7 +427,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "_core/generate-config-schema.mjs", "runtime": "node" },
-      "enabled": false,
+      "enabled": true,
       "settings": {
         "model": "_core/config-model.mjs",
         "output": "config.schema.json"
@@ -493,7 +441,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "_core/validate-runtime-hooks.mjs", "runtime": "node" },
-      "enabled": false,
+      "enabled": true,
       "settings": {
         "model": "_core/config-model.mjs",
         "config": "config.json",
@@ -508,7 +456,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "inject-protocol/index-skills.py", "runtime": "python" },
-      "enabled": false,
+      "enabled": true,
       "settings": {
         "scanRoots": [
           { "path": "E:/__skills", "source": "warehouse", "scope": "all" }
@@ -527,7 +475,7 @@
       "category": "maintenance",
       "trigger": "manual",
       "script": { "path": "memory-normalizer/normalize-memory-tags.py", "runtime": "python" },
-      "enabled": false,
+      "enabled": true,
       "settings": {
         "activeSlugs": ["blockdata", "kai-chattr", "kai"],
         "_activeSlugsNote": "= shared.projects where kind=='rebuild'. Listed for the python script; keep in sync with shared.projects.",

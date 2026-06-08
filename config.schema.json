@@ -295,8 +295,7 @@
             "properties": {
               "id": {
                 "enum": [
-                  "inject-protocol",
-                  "inject-protocol-complex"
+                  "inject-protocol"
                 ]
               }
             }

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # Mirrors allowlisted SKILL.md files into the configured memory SQLite FTS tables.
 # Config authority: E:/hooks/config.json shared.paths + scripts[id=skill-indexer].settings.
+import argparse
 import glob
 import json
 import os
@@ -9,7 +10,7 @@ import sqlite3
 import sys
 import time
 
-CONFIG = "E:/hooks/config.json"
+CONFIG = os.environ.get("HOOKS_CONFIG_PATH", "E:/hooks/config.json")
 SCRIPT_ID = "skill-indexer"
 
 
@@ -201,7 +202,67 @@ def load_curated():
     return set(names)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Rebuild skills/skills_fts from allowlisted SKILL.md files.")
+    parser.add_argument("--dry-run", action="store_true", help="Report what would be indexed without modifying the DB.")
+    parser.add_argument("--allow-empty", action="store_true", help="Permit rebuilding to zero skills (otherwise abort to avoid wiping the index).")
+    parser.add_argument("--list", action="store_true", help="List indexed and missing skills.")
+    return parser.parse_args()
+
+
+def rebuild_index(conn, skills, now):
+    """Atomic swap: DROP + CREATE + INSERT run inside ONE transaction, so a failure
+    rolls back to the existing tables and concurrent readers never see an empty index."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute("DROP TABLE IF EXISTS skills")
+        conn.execute("DROP TABLE IF EXISTS skills_fts")
+        conn.execute("""CREATE TABLE skills(
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            source TEXT,
+            scope TEXT,
+            path TEXT,
+            description TEXT,
+            content TEXT,
+            curated INTEGER DEFAULT 0,
+            indexed_at REAL
+        )""")
+        conn.execute("CREATE VIRTUAL TABLE skills_fts USING fts5(name, description, content)")
+        for skill in skills:
+            cur = conn.execute(
+                "INSERT INTO skills(name,source,scope,path,description,content,curated,indexed_at) VALUES(?,?,?,?,?,?,?,?)",
+                (skill["name"], skill["source"], skill["scope"], skill["path"], skill["description"], skill["content"], 1, now),
+            )
+            conn.execute(
+                "INSERT INTO skills_fts(rowid,name,description,content) VALUES(?,?,?,?)",
+                (cur.lastrowid, skill["name"], skill["description"], skill["content"]),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+def report(skills, indexed_names, curated, missing, *, verb="Indexed"):
+    by_source = {}
+    for skill in skills:
+        by_source[skill["source"]] = by_source.get(skill["source"], 0) + 1
+    print(f"{verb} {len(skills)} skills into {DB} -> skills / skills_fts")
+    print("  by source:", ", ".join(f"{key}={value}" for key, value in sorted(by_source.items())))
+    print(f"  allowlist indexed: {len(indexed_names)}/{len(curated)}")
+    print(f"  allowlist missing from configured roots: {len(missing)}")
+
+
+def print_list(skills, missing):
+    for skill in sorted(skills, key=lambda x: x["name"]):
+        print(f" *[{skill['source']}/{skill['scope']}] {skill['name']}")
+    for name in missing:
+        print(f" ![missing] {name}")
+
+
 def main():
+    args = parse_args()
     curated = load_curated()
     if not curated:
         print(f"No allowlist entries loaded from {CATALOG}; aborting without changing {DB}", file=sys.stderr)
@@ -216,45 +277,31 @@ def main():
     skills = collect(curated)
     indexed_names = {s["name"] for s in skills}
     missing = sorted(curated - indexed_names)
-    conn = sqlite3.connect(DB)
-    conn.execute("DROP TABLE IF EXISTS skills")
-    conn.execute("DROP TABLE IF EXISTS skills_fts")
-    conn.execute("""CREATE TABLE skills(
-        id INTEGER PRIMARY KEY,
-        name TEXT,
-        source TEXT,
-        scope TEXT,
-        path TEXT,
-        description TEXT,
-        content TEXT,
-        curated INTEGER DEFAULT 0,
-        indexed_at REAL
-    )""")
-    conn.execute("CREATE VIRTUAL TABLE skills_fts USING fts5(name, description, content)")
-    now = time.time()
-    for skill in skills:
-        cur = conn.execute(
-            "INSERT INTO skills(name,source,scope,path,description,content,curated,indexed_at) VALUES(?,?,?,?,?,?,?,?)",
-            (skill["name"], skill["source"], skill["scope"], skill["path"], skill["description"], skill["content"], 1, now),
-        )
-        conn.execute(
-            "INSERT INTO skills_fts(rowid,name,description,content) VALUES(?,?,?,?)",
-            (cur.lastrowid, skill["name"], skill["description"], skill["content"]),
-        )
-    conn.commit()
 
-    by_source = {}
-    for skill in skills:
-        by_source[skill["source"]] = by_source.get(skill["source"], 0) + 1
-    print(f"Indexed {len(skills)} skills into {DB} -> skills / skills_fts")
-    print("  by source:", ", ".join(f"{key}={value}" for key, value in sorted(by_source.items())))
-    print(f"  allowlist indexed: {len(indexed_names)}/{len(curated)}")
-    print(f"  allowlist missing from configured roots: {len(missing)}")
-    if "--list" in sys.argv:
-        for skill in sorted(skills, key=lambda x: x["name"]):
-            print(f" *[{skill['source']}/{skill['scope']}] {skill['name']}")
-        for name in missing:
-            print(f" ![missing] {name}")
+    # Data-loss guard: never wipe the live index to empty because of a misconfigured
+    # allowlist or scan root. The existing tables are preserved unless --allow-empty.
+    if not skills and not args.allow_empty:
+        print(f"Collected 0 skills from existing roots; aborting without changing {DB} (use --allow-empty to wipe).", file=sys.stderr)
+        return 2
+
+    if args.dry_run:
+        report(skills, indexed_names, curated, missing, verb="[dry-run] Would index")
+        print("  (dry run: no changes written)")
+        if args.list:
+            print_list(skills, missing)
+        return 0
+
+    now = time.time()
+    conn = sqlite3.connect(DB)
+    try:
+        conn.execute("PRAGMA busy_timeout=5000")
+        rebuild_index(conn, skills, now)
+    finally:
+        conn.close()
+
+    report(skills, indexed_names, curated, missing)
+    if args.list:
+        print_list(skills, missing)
     return 0
 
 

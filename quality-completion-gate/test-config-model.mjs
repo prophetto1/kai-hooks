@@ -18,6 +18,14 @@ function hookById(source, id) {
 const current = validateConfig(config);
 assert.deepEqual(current.errors, [], current.errors.join('\n'));
 
+const badBrowserVerifyEvent = structuredClone(config);
+hookById(badBrowserVerifyEvent, 'browser-verify-gate').event = 'PreToolUse';
+const badBrowserVerifyEventResult = validateConfig(badBrowserVerifyEvent);
+assert.ok(
+  badBrowserVerifyEventResult.errors.some((error) => error.includes('browser-verify-gate.event must be Stop')),
+  'browser-verify-gate event must be semantically validated'
+);
+
 const badEvent = structuredClone(config);
 badEvent.hooks[0].event = 'PromptSubmit';
 const badEventResult = validateConfig(badEvent);
@@ -64,14 +72,6 @@ const badInjectBudgetsResult = validateConfig(badInjectBudgets);
 assert.ok(
   badInjectBudgetsResult.errors.some((error) => error.includes('inject-protocol output.budgets total must be <= capChars')),
   'inject-protocol section budgets must fit under capChars'
-);
-
-const badComplexScript = structuredClone(config);
-hookById(badComplexScript, 'inject-protocol-complex').script.path = 'inject-protocol/inject-protocol.mjs';
-const badComplexScriptResult = validateConfig(badComplexScript);
-assert.ok(
-  badComplexScriptResult.errors.some((error) => error.includes('inject-protocol-complex.script.path mismatch')),
-  'inject-protocol-complex script path must be semantically validated'
 );
 
 const badMemoryNormalizerWrite = structuredClone(config);

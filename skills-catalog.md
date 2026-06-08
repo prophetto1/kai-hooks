@@ -16,7 +16,7 @@ Consult this when choosing a skill. Each entry is enough to route on without ope
 ## Tier 2b — process discipline (engage on the matching phase)
 
 _Plan_
-- `investigating-and-writing-plan` — multi-step task: investigate repo, lock the plan contract, write the tasks before touching code.
+- `investigating-and-writing-plan-v2` — multi-step task: investigate repo, lock the plan contract, write the tasks before touching code.
 - `taking-over-investigation-and-plan` — inheriting a draft or partial work: verify, salvage, reconcile, or replace before continuing.
 - `architecture` — choosing between technologies or recording a design decision with tradeoffs (ADR).
 - `system-design` — designing services, APIs, data models, and service boundaries.

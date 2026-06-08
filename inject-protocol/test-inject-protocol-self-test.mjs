@@ -33,5 +33,4 @@ function runSelfTest(scriptPath, expectedId) {
 }
 
 runSelfTest(join(root, 'inject-protocol/inject-protocol.mjs'), 'inject-protocol');
-runSelfTest(join(root, 'inject-protocol-complex/inject-protocol-complex.mjs'), 'inject-protocol-complex');
 console.log('inject protocol self-test verifier passed');

@@ -68,12 +68,3 @@ test('active injector is wired to shared core helpers', () => {
   assert.match(source, /composeOutput\(\s*rules,\s*skillResult\.rows,\s*memoryResult\.rows,\s*labels,\s*S\.output\.capChars,\s*S\.output\.budgets,\s*diagnostics\s*\)/);
   assert.doesNotMatch(source, /c\.includes\('\/' \+ token\)/);
 });
-
-test('complex injector is wired to shared core helpers', () => {
-  const source = readFileSync(new URL('../inject-protocol-complex/inject-protocol-complex.mjs', import.meta.url), 'utf8');
-
-  assert.match(source, /from '\.\.\/inject-protocol\/inject-core\.mjs'/);
-  assert.match(source, /projectFromCwd\(cwd,\s*SHARED\.projects\.entries\)/);
-  assert.match(source, /composeOutput\(\s*rules,\s*skillResult\.rows,\s*memoryResult\.rows,\s*labels,\s*S\.output\.capChars,\s*S\.output\.budgets,\s*diagnostics\s*\)/);
-  assert.doesNotMatch(source, /c\.includes\('\/' \+ token\)/);
-});

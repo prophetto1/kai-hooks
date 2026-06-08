@@ -119,7 +119,7 @@ function definitions() {
       },
       allOf: [
         {
-          if: { properties: { id: { enum: ['inject-protocol', 'inject-protocol-complex'] } } },
+          if: { properties: { id: { enum: ['inject-protocol'] } } },
           then: { properties: { settings: ref('injectSettings') } },
         },
       ],
@@ -599,56 +599,6 @@ function validateInjectProtocol(config, errors) {
   pushIf(errors, isObject(skills.explain), 'skills.explain missing');
 }
 
-function validateInjectProtocolComplex(config, errors) {
-  const hook = hookById(config, 'inject-protocol-complex');
-  pushIf(errors, isObject(hook), 'missing hooks[id=inject-protocol-complex]');
-  if (!isObject(hook)) return;
-
-  const settings = hook.settings || {};
-  const sources = settings.sources || {};
-  const memory = sources.memory || {};
-  const skills = sources.skills || {};
-
-  pushIf(errors, hook.event === 'UserPromptSubmit', 'inject-protocol-complex.event must be UserPromptSubmit');
-  pushIf(errors, hook.script?.path === 'inject-protocol-complex/inject-protocol-complex.mjs', 'inject-protocol-complex.script.path mismatch');
-  pushIf(errors, typeof sources.protocol?.file === 'string', 'inject-protocol-complex sources.protocol.file missing');
-  pushIf(errors, positiveInteger(settings.terms?.minLen), 'inject-protocol-complex terms.minLen invalid');
-  pushIf(errors, positiveInteger(settings.terms?.max), 'inject-protocol-complex terms.max invalid');
-  pushIf(errors, Number.isInteger(settings.terms?.contextPrompts) && settings.terms.contextPrompts >= 0, 'inject-protocol-complex terms.contextPrompts invalid');
-  pushIf(errors, typeof settings.terms?.tokenCharClass === 'string' && settings.terms.tokenCharClass.length > 0, 'inject-protocol-complex terms.tokenCharClass invalid');
-  pushIf(errors, TOKENIZER_CONFIG.allowedFlags.includes(settings.terms?.tokenRegexFlags), 'inject-protocol-complex terms.tokenRegexFlags invalid');
-  pushIf(errors, validTokenRegex(settings.terms), 'inject-protocol-complex token regex invalid');
-  pushIf(errors, positiveInteger(settings.output?.capChars), 'inject-protocol-complex output.capChars invalid');
-  pushIf(errors, positiveInteger(settings.output?.budgets?.protocolChars), 'inject-protocol-complex output.budgets.protocolChars invalid');
-  pushIf(errors, positiveInteger(settings.output?.budgets?.diagnosticsChars), 'inject-protocol-complex output.budgets.diagnosticsChars invalid');
-  pushIf(errors, positiveInteger(settings.output?.budgets?.skillsChars), 'inject-protocol-complex output.budgets.skillsChars invalid');
-  pushIf(errors, positiveInteger(settings.output?.budgets?.memoryChars), 'inject-protocol-complex output.budgets.memoryChars invalid');
-  validateOutputBudgets(errors, settings.output, 'inject-protocol-complex output');
-  pushIf(errors, typeof settings.output?.labels?.diagnostics === 'string', 'inject-protocol-complex output.labels.diagnostics missing');
-  pushIf(errors, typeof settings.output?.labels?.skills === 'string', 'inject-protocol-complex output.labels.skills missing');
-  pushIf(errors, typeof settings.output?.labels?.memory === 'string', 'inject-protocol-complex output.labels.memory missing');
-
-  pushIf(errors, identifier(memory.ftsTable), 'inject-protocol-complex memory.ftsTable must be a SQL identifier');
-  pushIf(errors, identifier(memory.joinTable), 'inject-protocol-complex memory.joinTable must be a SQL identifier');
-  pushIf(errors, Array.isArray(memory.filters) && memory.filters.every((filter) => (
-    isObject(filter) && MEMORY_FILTER_IDS.includes(filter.id)
-  )), `inject-protocol-complex memory.filters must use allowlisted ids: ${MEMORY_FILTER_IDS.join(', ')}`);
-  pushIf(errors, positiveInteger(memory.max), 'inject-protocol-complex memory.max invalid');
-  pushIf(errors, positiveInteger(memory.snippetChars), 'inject-protocol-complex memory.snippetChars invalid');
-  pushIf(errors, positiveInteger(memory.minTerms), 'inject-protocol-complex memory.minTerms invalid');
-  pushIf(errors, positiveInteger(memory.candidatePool), 'inject-protocol-complex memory.candidatePool invalid');
-  validateMemoryScoring(errors, memory.scoring);
-  pushIf(errors, isObject(memory.explain), 'inject-protocol-complex memory.explain missing');
-
-  pushIf(errors, identifier(skills.ftsTable), 'inject-protocol-complex skills.ftsTable must be a SQL identifier');
-  pushIf(errors, identifier(skills.joinTable), 'inject-protocol-complex skills.joinTable must be a SQL identifier');
-  pushIf(errors, positiveInteger(skills.max), 'inject-protocol-complex skills.max invalid');
-  pushIf(errors, positiveInteger(skills.candidatePool), 'inject-protocol-complex skills.candidatePool invalid');
-  validateSkillsScoring(errors, skills.scoring);
-  pushIf(errors, Array.isArray(skills.noiseTerms), 'inject-protocol-complex skills.noiseTerms must be an array');
-  pushIf(errors, isObject(skills.explain), 'inject-protocol-complex skills.explain missing');
-}
-
 function validateSkillIndexer(config, errors) {
   const script = scriptById(config, 'skill-indexer');
   pushIf(errors, isObject(script), 'missing scripts[id=skill-indexer]');
@@ -803,16 +753,49 @@ function validateQualityCompletionGate(config, errors) {
   pushIf(errors, nonEmptyStringArray(s.nonAuthority), 'quality-completion-gate settings.nonAuthority must be a non-empty string array');
 }
 
+function validateBrowserVerifyGate(config, errors) {
+  const hook = hookById(config, 'browser-verify-gate');
+  if (!isObject(hook)) return; // optional hook — validate only when present
+  pushIf(errors, hook.event === 'Stop', 'browser-verify-gate.event must be Stop');
+  pushIf(errors, hook.script?.path === 'browser-verify-gate/browser-verify-gate.py', 'browser-verify-gate.script.path mismatch');
+  const s = hook.settings || {};
+  pushIf(errors, identifier(s.table), 'browser-verify-gate settings.table must be a SQL identifier');
+  pushIf(errors, positiveInteger(s.minToolUses), 'browser-verify-gate settings.minToolUses invalid');
+  pushIf(errors, positiveInteger(s.maxRepeatedBlocks), 'browser-verify-gate settings.maxRepeatedBlocks invalid');
+  pushIf(errors, typeof s.requireSnapshot === 'boolean', 'browser-verify-gate settings.requireSnapshot must be boolean');
+  pushIf(errors, nonEmptyStringArray(s.navigatePatterns), 'browser-verify-gate settings.navigatePatterns must be a non-empty string array');
+  pushIf(errors, nonEmptyStringArray(s.inspectPatterns), 'browser-verify-gate settings.inspectPatterns must be a non-empty string array');
+  const tel = hookById(config, 'hook-telemetry');
+  pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'browser-verify-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
+}
+
+function validateFrontendDesignGate(config, errors) {
+  const hook = hookById(config, 'frontend-design-gate');
+  if (!isObject(hook)) return; // optional hook — validate only when present
+  pushIf(errors, hook.event === 'Stop', 'frontend-design-gate.event must be Stop');
+  pushIf(errors, hook.script?.path === 'frontend-design-gate/frontend-design-gate.py', 'frontend-design-gate.script.path mismatch');
+  const s = hook.settings || {};
+  pushIf(
+    errors,
+    isObject(s.primitives) && Object.keys(s.primitives).length > 0 && Object.values(s.primitives).every((v) => typeof v === 'string' && v.length > 0),
+    'frontend-design-gate settings.primitives must map element names to non-empty filenames'
+  );
+  pushIf(errors, positiveInteger(s.maxRepeatedBlocks), 'frontend-design-gate settings.maxRepeatedBlocks invalid');
+  pushIf(errors, s.stateDir === undefined || (typeof s.stateDir === 'string' && s.stateDir.length > 0), 'frontend-design-gate settings.stateDir must be a non-empty string when present');
+  // No telemetry coupling: this gate reads git (diff), not hook_events.
+}
+
 export function validateConfig(config) {
   const errors = [];
   validateBaseConfig(config, errors);
   validateInjectProtocol(config, errors);
-  validateInjectProtocolComplex(config, errors);
   validateTelemetry(config, errors);
   validateMemoryNormalizer(config, errors);
   validateLoopSafety(config, errors);
   validateThinkingGate(config, errors);
   validateQualityCompletionGate(config, errors);
+  validateBrowserVerifyGate(config, errors);
+  validateFrontendDesignGate(config, errors);
   validateSkillIndexer(config, errors);
   return { ok: errors.length === 0, errors };
 }
