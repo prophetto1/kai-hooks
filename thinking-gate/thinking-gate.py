@@ -23,6 +23,7 @@ DEFAULT_THINKING_TOOLS = [
     "mcp__sequentialthinking__sequentialthinking",
     "mcp__plugin_sequential-thinking_sequential-thinking__sequentialthinking",
     "mcp__plugin_sequentialthinking_sequentialthinking__sequentialthinking",
+    "mcp__mcp_router.sequentialthinking",
 ]
 
 

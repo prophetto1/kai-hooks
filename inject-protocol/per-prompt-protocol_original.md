@@ -1,6 +1,8 @@
 # Per-prompt protocol — apply, don't perform.
 
-## A. Memory (memory-vector only - check mcp-router)
+## mcp-router.Sequential thinking and memory-vector both in MCP-ROUTER
+
+## A. Memory (mcp-router has vector and hindsight)
 - Recall first: `memory_search`; 
 - Capture previous 3 exchanges: decisions, rules, project state, path/URL/ID pointers, corrections (`mistake_note_add`), non-obvious facts. 
 - Dedupe first (`memory_search` → `memory_update` by `content_hash`, else `memory_store`). 
@@ -14,5 +16,12 @@ Conform to the repo's `contracts/`/`governance/` first — guardrails block non-
 ## D. Standing rules
 - Brevity. No fallbacks/loopholes — fix the real thing (no mocks, skip-flags, bypasses). Secrets via SOPS only; never ask the user to log in/re-auth. Each repo's docs-site holds the detail.
 
-## E. Map
+## E. Planned store and changelogs
+- The shared Planned store is served by the Neon-backed Stores API at `http://127.0.0.1:1721`, store `planned`.
+- First read `planned/planned-store-worker-guide.md` for the detailed how-to. Find it through `GET /stores/planned/tree`, then read it with `GET /stores/planned/nodes/{node_id}`.
+- Project folders are flat. Current roots: `jwc-global`, `kai-chattr`, `hooks`.
+- Before claiming completion for any codebase change, update the matching project `changelog.md` in Planned.
+- Minimum endpoints: `GET /stores/planned/tree`, `GET /stores/planned/nodes/{node_id}`, `PUT /stores/planned/nodes/{node_id}/content`, `POST /stores/planned/files`.
+
+## F. Map
 - Clean targets ← legacy sources (copy-only, governance-first, outside-in): **blockdata ← writing-system**, **kai-chattr ← chattr**. Both clean repos: Python FastAPI backend + Fumadocs devdocs.

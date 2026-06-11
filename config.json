@@ -182,7 +182,7 @@
         "ttlSeconds": 500,
         "grantPolicy": {
           "mode": "bounded_tool_count",
-          "maxToolUses": 15
+          "maxToolUses": 20
         },
         "thinkingTools": [
           "mcp__mcp_router__sequentialthinking",
