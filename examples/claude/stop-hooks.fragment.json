@@ -1,0 +1,13 @@
+{
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "node E:/hooks/stop-completion-chain/stop-completion-chain.mjs",
+          "timeout": 360000
+        }
+      ]
+    }
+  ]
+}

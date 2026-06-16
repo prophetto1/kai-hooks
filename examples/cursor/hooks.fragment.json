@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs postToolUse E:/hooks/hook-telemetry/log-event.py"
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs postToolUseFailure E:/hooks/hook-telemetry/log-event.py"
+      }
+    ],
+    "stop": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs stop E:/hooks/stop-completion-chain/stop-completion-chain.mjs",
+        "loop_limit": 8
+      }
+    ]
+  }
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Stop hook: compute changed domains from git, run manifest-declared verification commands, gate on exit codes.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import {
@@ -14,6 +14,7 @@ import {
   readJsonStdin,
   repoEntryForRoot,
   runVerifyCommand,
+  stopFailureResponse,
   touchedDomains,
   writeJson
 } from './quality-gate-core.mjs';
@@ -37,6 +38,10 @@ function positiveInteger(value, fallback) {
 
 function hash(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
+function lockToken() {
+  return hash({ pid: process.pid, at: Date.now(), nonce: Math.random() });
 }
 
 function qualityStateDir(activeRuntime) {
@@ -135,12 +140,16 @@ function applyLoopState(activeRuntime, input, repoRoot, decision) {
 }
 
 function block(activeRuntime, input, repoRoot, reason, signaturePayload, domainNames = []) {
-  return applyLoopState(activeRuntime, input, repoRoot, {
+  const blocked = applyLoopState(activeRuntime, input, repoRoot, {
     decision: 'block',
     reason,
     signaturePayload,
     domainNames
   });
+  if (blocked.decision === 'block') {
+    return stopFailureResponse(activeRuntime.settings, blocked.reason);
+  }
+  return blocked;
 }
 
 function remainingBudget(activeRuntime, startedAt) {
@@ -159,6 +168,122 @@ function budgetFailure(command, domain, totalBudgetMs) {
     status: null,
     output: `Total Stop budget of ${totalBudgetMs}ms exhausted before this command could run.`
   };
+}
+
+function singleFlightStaleMs(activeRuntime, totalBudgetMs) {
+  const configured = activeRuntime.settings.singleFlightStaleMs;
+  return positiveInteger(configured, totalBudgetMs + 60000);
+}
+
+function lockPath(activeRuntime, repoRoot) {
+  return join(qualityStateDir(activeRuntime), 'locks', `${hash({ repoRoot })}.lock`);
+}
+
+function readLock(path) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function removeStaleLock(path, staleMs) {
+  try {
+    const ageMs = Date.now() - statSync(path).mtimeMs;
+    if (ageMs < staleMs) return false;
+    rmSync(path, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function processIsRunning(pid) {
+  const numericPid = Number(pid);
+  if (!Number.isInteger(numericPid) || numericPid <= 0) return false;
+  try {
+    process.kill(numericPid, 0);
+    return true;
+  } catch (error) {
+    return error?.code === 'EPERM';
+  }
+}
+
+function removeDeadOwnerLock(path, existing) {
+  if (!existing?.pid || processIsRunning(existing.pid)) return false;
+  try {
+    rmSync(path, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function tryCreateLock(path, owner) {
+  const fd = openSync(path, 'wx');
+  try {
+    writeFileSync(fd, `${JSON.stringify(owner, null, 2)}\n`, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function acquireSingleFlight(activeRuntime, input, repoRoot, domainNames, totalBudgetMs) {
+  const path = lockPath(activeRuntime, repoRoot);
+  const owner = {
+    token: lockToken(),
+    pid: process.pid,
+    repoRoot,
+    domains: [...domainNames].sort(),
+    cwd: input.cwd || process.cwd(),
+    sessionId: input.session_id || input.sessionId || '',
+    startedAt: new Date().toISOString()
+  };
+  const staleMs = singleFlightStaleMs(activeRuntime, totalBudgetMs);
+
+  mkdirSync(dirname(path), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      tryCreateLock(path, owner);
+      return { ok: true, path, owner };
+    } catch (error) {
+      if (error?.code !== 'EEXIST') {
+        return {
+          ok: false,
+          reason: `Quality completion gate could not acquire the single-flight lock for ${repoRoot}: ${error.message || error}`
+        };
+      }
+      const existing = readLock(path);
+      if (attempt === 0 && removeDeadOwnerLock(path, existing)) continue;
+      if (attempt === 0 && removeStaleLock(path, staleMs)) continue;
+
+      const detail = existing?.startedAt
+        ? ` Existing runner pid ${existing.pid || 'unknown'} started at ${existing.startedAt}.`
+        : '';
+      return {
+        ok: false,
+        reason:
+          `Quality completion gate is already running for ${repoRoot}. ` +
+          `Do not start another gate, wait, poll, or debug.${detail}`
+      };
+    }
+  }
+
+  return {
+    ok: false,
+    reason: `Quality completion gate could not acquire the single-flight lock for ${repoRoot}.`
+  };
+}
+
+function releaseSingleFlight(lock) {
+  if (!lock?.ok || !lock.path) return;
+  const existing = readLock(lock.path);
+  if (existing?.token && existing.token !== lock.owner?.token) return;
+  try {
+    rmSync(lock.path, { force: true });
+  } catch {
+    // Lock cleanup must not mask the actual gate result.
+  }
 }
 
 function evaluate(input) {
@@ -255,39 +380,48 @@ function evaluate(input) {
   }
 
   const totalBudgetMs = positiveInteger(runtime.settings.totalBudgetMs, DEFAULT_TOTAL_BUDGET_MS);
-  const results = [];
-  for (const command of commands) {
-    const remaining = remainingBudget(runtime, startedAt);
-    if (remaining <= 0) {
-      results.push(budgetFailure(command, command.domain, totalBudgetMs));
-      break;
-    }
-    results.push(runVerifyCommand(repoRoot, command, runtime.shared.runtime.verifyCommandTimeoutMs, remaining));
-  }
-  const failures = results.filter((result) => !result.ok);
-  if (failures.length) {
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      `Quality completion gate ran ${results.length} manifest command(s) for ${domainNames.join(', ')} and ${failures.length} failed.\n` +
-        failures.map(formatFailure).join('\n\n'),
-      {
-        kind: 'command-failures',
-        failures: failures.map((failure) => ({
-          label: failure.label,
-          command: failure.command,
-          domain: failure.domain,
-          status: failure.status,
-          output: failure.output
-        }))
-      },
-      domainNames
-    );
+  const lock = acquireSingleFlight(runtime, input, repoRoot, domainNames, totalBudgetMs);
+  if (!lock.ok) {
+    return stopFailureResponse(runtime.settings, lock.reason);
   }
 
-  clearState(runtime, input, repoRoot);
-  return { continue: true };
+  try {
+    const results = [];
+    for (const command of commands) {
+      const remaining = remainingBudget(runtime, startedAt);
+      if (remaining <= 0) {
+        results.push(budgetFailure(command, command.domain, totalBudgetMs));
+        break;
+      }
+      results.push(runVerifyCommand(repoRoot, command, runtime.shared.runtime.verifyCommandTimeoutMs, remaining));
+    }
+    const failures = results.filter((result) => !result.ok);
+    if (failures.length) {
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        `Quality completion gate ran ${results.length} manifest command(s) for ${domainNames.join(', ')} and ${failures.length} failed.\n` +
+          failures.map(formatFailure).join('\n\n'),
+        {
+          kind: 'command-failures',
+          failures: failures.map((failure) => ({
+            label: failure.label,
+            command: failure.command,
+            domain: failure.domain,
+            status: failure.status,
+            output: failure.output
+          }))
+        },
+        domainNames
+      );
+    }
+
+    clearState(runtime, input, repoRoot);
+    return { continue: true };
+  } finally {
+    releaseSingleFlight(lock);
+  }
 }
 
 function selfTest() {

@@ -16,9 +16,13 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_core"))
 from hook_runtime import connect, hooks_db, run, safe_table  # noqa: E402
 
+CANONICAL_THINKING_TOOL = "mcp__mcp-router__sequentialthinking"
+
 DEFAULT_THINKING_TOOLS = [
+    "MCP:sequentialthinking",
+    "CallMcpTool",
     "mcp__mcp_router__sequentialthinking",
-    "mcp__mcp-router__sequentialthinking",
+    CANONICAL_THINKING_TOOL,
     "mcp__sequential-thinking__sequentialthinking",
     "mcp__sequentialthinking__sequentialthinking",
     "mcp__plugin_sequential-thinking_sequential-thinking__sequentialthinking",
@@ -31,7 +35,52 @@ def configured_thinking_tools(settings: dict) -> list[str]:
     raw = settings.get("thinkingTools")
     if not isinstance(raw, list) or not raw:
         return DEFAULT_THINKING_TOOLS
-    return [str(item) for item in raw if str(item)]
+    return list(dict.fromkeys(str(item) for item in raw if str(item)))
+
+
+def _normalized_st_text(value) -> str:
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+def _looks_like_sequentialthinking(value) -> bool:
+    return "sequentialthinking" in _normalized_st_text(value)
+
+
+def call_mcp_tool_name(tool_input) -> str:
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in ("toolName", "tool", "name"):
+        value = tool_input.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def normalize_thinking_tool_name(tool_name: str, tool_input=None) -> str:
+    if tool_name == "MCP:sequentialthinking":
+        return CANONICAL_THINKING_TOOL
+    if tool_name == "CallMcpTool" and _looks_like_sequentialthinking(call_mcp_tool_name(tool_input)):
+        return CANONICAL_THINKING_TOOL
+    return tool_name
+
+
+def is_thinking_tool_call(tool_name: str, tool_input, thinking_tools: list[str]) -> bool:
+    if tool_name == "CallMcpTool":
+        return _looks_like_sequentialthinking(call_mcp_tool_name(tool_input))
+    normalized = normalize_thinking_tool_name(tool_name, tool_input)
+    return tool_name in thinking_tools or normalized in thinking_tools
+
+
+def grant_lookup_thinking_tools(thinking_tools: list[str]) -> list[str]:
+    names = []
+    for name in thinking_tools:
+        if name == "CallMcpTool":
+            continue
+        names.append(normalize_thinking_tool_name(name))
+        names.append(name)
+    names.append(CANONICAL_THINKING_TOOL)
+    names.append("MCP:sequentialthinking")
+    return list(dict.fromkeys(name for name in names if name))
 
 
 def bootstrap_allowed(settings: dict, tool_name: str, tool_input) -> bool:
@@ -43,7 +92,7 @@ def bootstrap_allowed(settings: dict, tool_name: str, tool_input) -> bool:
         return False
     text = ""
     if isinstance(tool_input, dict):
-        for key in ("query", "q", "pattern", "tool", "name"):
+        for key in ("query", "q", "pattern", "tool", "name", "toolName", "server"):
             value = tool_input.get(key)
             if value:
                 text += f" {value}"
@@ -132,12 +181,13 @@ CREATE TABLE IF NOT EXISTS {table} (
 def latest_successful_thinking_event(con, table: str, session_id: str, cutoff: float, thinking_tools: list[str]):
     if not table_exists(con, table):
         return None
-    placeholders = ",".join("?" for _ in thinking_tools)
+    grant_tools = grant_lookup_thinking_tools(thinking_tools)
+    placeholders = ",".join("?" for _ in grant_tools)
     return con.execute(
         f"SELECT id, tool_name, status, ts FROM {table} "
         f"WHERE session_id=? AND ts>=? AND status='ok' AND tool_name IN ({placeholders}) "
         "ORDER BY ts DESC, id DESC LIMIT 1",
-        (session_id, cutoff, *thinking_tools),
+        (session_id, cutoff, *grant_tools),
     ).fetchone()
 
 
@@ -186,10 +236,13 @@ def primary_thinking_tool(thinking_tools: list[str]) -> str:
 
 def emit_deny(tool_name: str, ttl_seconds: int, max_uses: int, thinking_tools: list[str]) -> None:
     checkpoint_tool = primary_thinking_tool(thinking_tools)
+    cursor_hint = ""
+    if "MCP:sequentialthinking" in thinking_tools or "CallMcpTool" in thinking_tools:
+        cursor_hint = " Cursor: call `MCP:sequentialthinking` or `CallMcpTool` with `toolName=sequentialthinking`."
     reason = (
         f"thinking-gate: '{tool_name}' blocked — no active planning grant. "
         f"Call `{checkpoint_tool}` once (grants {max_uses} tool use(s)/{ttl_seconds}s); "
-        f"if it's not loaded, load it via ToolSearch first (exempt)."
+        f"if it's not loaded, load it via ToolSearch first (exempt).{cursor_hint}"
     )
     print(json.dumps({
         "hookSpecificOutput": {
@@ -201,6 +254,16 @@ def emit_deny(tool_name: str, ttl_seconds: int, max_uses: int, thinking_tools: l
     }))
 
 
+def configured_read_only_tools(settings: dict) -> set[str]:
+    raw = settings.get("readOnlyTools")
+    if not isinstance(raw, list) or not raw:
+        return {
+            "Read", "Grep", "Glob", "SemanticSearch", "WebSearch", "WebFetch",
+            "AskQuestion", "Await", "FetchMcpResource", "ListMcpResources", "SwitchMode",
+        }
+    return {str(item) for item in raw if str(item)}
+
+
 def handler(payload, config, hcfg):
     session_id = payload.get("session_id", "")
     tool_name = payload.get("tool_name", "")
@@ -208,10 +271,13 @@ def handler(payload, config, hcfg):
         return
 
     settings = hcfg.get("settings", {})
-    thinking_tools = configured_thinking_tools(settings)
-    if tool_name in thinking_tools:
+    if tool_name in configured_read_only_tools(settings):
         return
-    if bootstrap_allowed(settings, tool_name, payload.get("tool_input", {})):
+    thinking_tools = configured_thinking_tools(settings)
+    tool_input = payload.get("tool_input", {})
+    if is_thinking_tool_call(tool_name, tool_input, thinking_tools):
+        return
+    if bootstrap_allowed(settings, tool_name, tool_input):
         return
 
     table = safe_table(settings.get("table", "hook_events"), "hook_events")

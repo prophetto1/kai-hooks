@@ -8,13 +8,14 @@
 - Dedupe first (`memory_search` → `memory_update` by `content_hash`, else `memory_store`). 
 
 ## B. Skills (invoke & follow — naming one ≠ using it)
-- Load ≥1 matching skill per substantive turn (Tier-1 even on light turns; 2 for ideation→plan). After output: `verification-before-completion`; first turn after an implementation: that, then `blind-implementation-review`. Catalog: `E:/hooks/skills-catalog.md`.
+- Load ≥1 matching skill per substantive turn (Tier-1 even on light turns; 2 for ideation→plan). Task mode + required skills: `E:/hooks/_docs/task-mode-and-skills.md` (injected by task-mode-gate). After output: `verification-before-completion`; large diffs: `waza-hunt`. Catalog: `E:/hooks/skills-catalog.md`.
 
 ## C. Writing repo files
 Conform to the repo's `contracts/`/`governance/` first — guardrails block non-conforming writes; no contract → nearest existing pattern.
 
 ## D. Standing rules
 - Brevity. No fallbacks/loopholes — fix the real thing (no mocks, skip-flags, bypasses). Secrets via SOPS only; never ask the user to log in/re-auth. Each repo's docs-site holds the detail.
+- Work on the branch that's already checked out; don't create new branches or worktrees unless the user explicitly asks.
 
 ## E. Planned store and changelogs
 - The shared Planned store is served by the Neon-backed Stores API at `http://127.0.0.1:1721`, store `planned`.

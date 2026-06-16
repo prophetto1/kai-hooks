@@ -1,0 +1,74 @@
+﻿# Changelog
+
+Project: hooks
+
+## Update Rule
+
+Every time work changes the hooks codebase, find and update this changelog before the task is considered complete.
+
+A codebase change includes source code edits, migrations, configuration changes, dependency changes, scripts, tests, docs that affect implementation behavior, or store/API/data changes tied to this project.
+
+## Entries
+
+### 2026-06-16
+
+- Changed: `quality-completion-gate` now uses a per-repo single-flight lock so concurrent Codex/Cursor Stop chains do not launch duplicate manifest commands against shared state.
+- Changed: Single-flight locks whose owner PID is no longer running are cleared immediately, so force-killed gates do not block later Stop hooks until timeout.
+- Tests: Added regression coverage that a second concurrent quality gate blocks immediately while the first owns the manifest run, and that dead-owner locks are cleared.
+- Changed: Cursor Stop wiring is now chain-only. Removed the unsafe per-gate Cursor fragment and documented that Stop must route through `stop-completion-chain`.
+- Changed: Runtime hook validation now rejects Cursor Stop hooks that call `quality-completion-gate`, `agent-diff-completion-gate`, or `browser-verify-gate` directly, and rejects project-level Cursor Stop when user-level Cursor Stop is already wired.
+- Changed: Runtime hook validation now checks live Codex Stop wiring and the Codex example fragment, including chain-only wiring and a minimum 360s outer timeout.
+- Changed: Codex/Claude Stop examples now use a 360s outer timeout so the runtime timeout exceeds the chain's configured per-step timeout.
+
+### 2026-06-15 (d)
+
+- Fixed: Cursor `thinking-gate` sequential-thinking deadlock by accepting `MCP:sequentialthinking`, narrowly recognizing `CallMcpTool` only when `toolName` is sequentialthinking, and normalizing Cursor MCP sequential-thinking telemetry to the canonical MCP-router tool name.
+- Changed: Cursor adapter now maps raw Cursor sequential-thinking tool names before hooks see them so the same successful ST call opens the bounded grant window used by Codex/Claude.
+- Tests: Added regression coverage for Cursor MCP ST exemption, `CallMcpTool` ST exemption, grant activation from raw/canonical ST telemetry, non-ST `CallMcpTool` denial, and Cursor-callable deny guidance.
+
+### 2026-06-15 (c)
+
+- Added: `task-mode/` — UserPromptSubmit mode classification + PreToolUse planning checkpoint before mutators; expanded skills table includes `refactor`, `code-review`, `receiving-code-review`, `requesting-code-review`, `review-bugbot`.
+- Changed: `thinking-gate` read-only tool exemption; `_docs/task-mode-and-skills.md` canonical mode/skill map; `_docs/runtime-wiring.md` full three-layer stack.
+- Changed: Wired live Cursor (`~/.cursor/hooks.json`), Codex, Claude, and kai-chattr project hooks for inject → task-mode → planning → thinking → telemetry → Stop chain.
+- Verification: `node _core/validate-runtime-hooks.mjs`; `node task-mode/test-task-mode-core.mjs`; `node task-mode/task-mode-gate.mjs --self-test`.
+
+### 2026-06-15 (b)
+
+- Changed: LOC-tiered Stop flow — 1–500 LOC: Playwright → verification-before-completion; 501+: adds waza-hunt + 3 remediation loops.
+- Changed: Removed blind-review requirement; sequential phase enforcement with git diff LOC counting.
+
+### 2026-06-15
+
+- Changed: `agent-diff-completion-gate` now triggers only on diffs under `apps/`, `services/`, or `scripts/` with operational file extensions; Playwright saves timestamped evidence to `docs/verification/<timestamp>/`.
+- Changed: `scripts/dev/ui-snapshot.mjs` writes run folders with `report.json`, `run.json`, and `VERIFICATION_RUN_SUMMARY` for gate verification.
+- Verification: `node _core/validate-runtime-hooks.mjs`; `node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs`.
+
+### 2026-06-14
+
+- Added: `stop-completion-chain/stop-completion-chain.mjs` — canonical Stop orchestrator running quality → agent-diff → browser gates in sequence for Codex and Claude Code.
+- Added: `agent-diff-completion-gate/test-agent-diff-completion-gate.mjs` smoke test and `_docs/runtime-wiring.md` with Codex/Claude/Cursor wiring instructions.
+- Added: `examples/codex/stop-hooks.fragment.toml` and `examples/claude/stop-hooks.fragment.json` templates.
+- Changed: Wired live `~/.codex/config.toml` Stop hook to the completion chain (was quality-only).
+- Changed: Wired live `~/.claude/settings.json` Stop hook to the completion chain (was missing).
+- Changed: `config-model.mjs` validators for `agent-diff-completion-gate` and `stop-completion-chain`; quality-verify-manifest hooks domain updated.
+- Verification: `node _core/validate-runtime-hooks.mjs`; `node stop-completion-chain/stop-completion-chain.mjs --self-test`.
+
+### 2026-06-11
+
+- Created this changelog in Planned/hooks.
+- Established the rule that future hooks changes must update this file.
+### 2026-06-11
+
+- Changed: Moved detailed Planned Store worker instructions out of the injected per-prompt protocol and into `planned/hooks/planned-store-worker-guide.md`.
+- Changed: Shortened `E:/hooks/inject-protocol/per-prompt-protocol_original.md` to point workers to the Planned guide and keep only the minimum endpoints/changelog rule in the injected message.
+- Verification: Verified the guide document exists in the live Planned tree and ran `git diff --check -- inject-protocol/per-prompt-protocol_original.md`.
+### 2026-06-11
+
+- Changed: Created root-level `planned-store-worker-guide.md` for shared Planned store instructions that apply to all projects.
+- Changed: Updated the injected per-prompt protocol to call it the shared Planned store and point to the root guide instead of a hooks-local guide.
+- Verification: Verified the root guide exists in the live Planned tree and `git diff --check -- inject-protocol/per-prompt-protocol_original.md` passes.
+### 2026-06-11
+
+- Changed: Pushed hooks commit `81d87ad1e1172a1ee25424055f55b471b7c2939e` with updated hook audit/actionable docs, ST enforcement notes, Planned changelog protocol injection, thinking-gate MCP-router sequential-thinking alias support, and bounded grant max-tool-use tuning.
+- Verification: `git diff --check`; `git diff --cached --check`; raw key-format scan of staged files; `node _core/validate-runtime-hooks.mjs`; `python thinking-gate/test-thinking-gate.py`; `python -m py_compile thinking-gate/thinking-gate.py`; post-push `HEAD == origin/main` and `git rev-list --left-right --count '@{u}...HEAD'` returned `0 0`.

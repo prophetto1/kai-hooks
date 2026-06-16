@@ -13,6 +13,9 @@ from pathlib import Path
 HOOKS = Path("E:/hooks")
 SCRIPT = HOOKS / "thinking-gate" / "thinking-gate.py"
 THINKING_TOOL = "mcp__mcp_router__sequentialthinking"
+CANONICAL_THINKING_TOOL = "mcp__mcp-router__sequentialthinking"
+CURSOR_THINKING_TOOL = "MCP:sequentialthinking"
+CALL_MCP_TOOL = "CallMcpTool"
 GATED_TOOL = "Write"
 
 
@@ -41,9 +44,15 @@ def base_config(db_path: Path) -> dict:
                 "mode": "bounded_tool_count",
                 "maxToolUses": 2,
             },
-            "thinkingTools": [THINKING_TOOL],
+            "thinkingTools": [
+                CURSOR_THINKING_TOOL,
+                CALL_MCP_TOOL,
+                THINKING_TOOL,
+                CANONICAL_THINKING_TOOL,
+            ],
             "bootstrapTools": {
                 "ToolSearch": ["sequentialthinking", "sequential thinking"],
+                "CallMcpTool": ["sequentialthinking", "sequential thinking"],
             },
             "ttlSeconds": 120,
         },
@@ -149,6 +158,14 @@ def decision(proc: subprocess.CompletedProcess) -> str:
     return data.get("hookSpecificOutput", {}).get("permissionDecision", "allow")
 
 
+def deny_reason(proc: subprocess.CompletedProcess) -> str:
+    assert proc.returncode == 0, proc.stderr
+    if not proc.stdout.strip():
+        return ""
+    data = json.loads(proc.stdout)
+    return data.get("hookSpecificOutput", {}).get("permissionDecisionReason", "")
+
+
 def write_config(path: Path, db_path: Path, *, max_uses: int = 2) -> None:
     config = base_config(db_path)
     config["hooks"][-1]["settings"]["grantPolicy"]["maxToolUses"] = max_uses
@@ -166,6 +183,23 @@ def main() -> int:
         checks = []
 
         checks.append(("allows thinking tool itself", decision(invoke(config_path, tool_name=THINKING_TOOL)) == "allow"))
+        checks.append(("allows Cursor MCP sequentialthinking itself", decision(invoke(config_path, tool_name=CURSOR_THINKING_TOOL)) == "allow"))
+        checks.append((
+            "allows Cursor CallMcpTool sequentialthinking itself",
+            decision(invoke(
+                config_path,
+                tool_name=CALL_MCP_TOOL,
+                tool_input={"toolName": "sequentialthinking", "server": "user-mcp-router"},
+            )) == "allow",
+        ))
+        checks.append((
+            "denies non-thinking CallMcpTool without grant",
+            decision(invoke(
+                config_path,
+                tool_name=CALL_MCP_TOOL,
+                tool_input={"toolName": "browser_navigate", "server": "browser"},
+            )) == "deny",
+        ))
         checks.append((
             "allows bootstrap ToolSearch for thinking lookup",
             decision(invoke(
@@ -182,8 +216,14 @@ def main() -> int:
                 tool_input={"query": "browser automation"},
             )) == "deny",
         ))
-        checks.append(("denies write without thinking", decision(invoke(config_path)) == "deny"))
-        checks.append(("denies read without thinking", decision(invoke(config_path, tool_name="Read")) == "deny"))
+        no_grant_proc = invoke(config_path)
+        checks.append(("denies write without thinking", decision(no_grant_proc) == "deny"))
+        checks.append((
+            "Cursor deny message names callable Cursor thinking tools",
+            "MCP:sequentialthinking" in deny_reason(no_grant_proc)
+            and "CallMcpTool" in deny_reason(no_grant_proc),
+        ))
+        checks.append(("allows read-only tool without thinking", decision(invoke(config_path, tool_name="Read")) == "allow"))
         checks.append((
             "denies shell inspection without thinking",
             decision(invoke(
@@ -195,9 +235,31 @@ def main() -> int:
         checks.append(("denies unknown tool without thinking", decision(invoke(config_path, tool_name="mcp__example__file_write")) == "deny"))
 
         add_event(db_path, session_id="s1", tool_name=THINKING_TOOL, status="ok", age_seconds=5)
-        checks.append(("allows first matched tool after fresh thinking", decision(invoke(config_path, tool_name="Read")) == "allow"))
-        checks.append(("allows second matched tool after same thinking", decision(invoke(config_path, tool_name="Bash", tool_input={"command": "rg x"})) == "allow"))
-        checks.append(("denies third matched tool after grant exhausted", decision(invoke(config_path, tool_name="Write")) == "deny"))
+        checks.append(("allows read-only after fresh thinking without consuming grant", decision(invoke(config_path, tool_name="Read")) == "allow"))
+        checks.append(("allows first mutating tool after fresh thinking", decision(invoke(config_path, tool_name="Write")) == "allow"))
+        checks.append(("allows second mutating tool after same thinking", decision(invoke(config_path, tool_name="Bash", tool_input={"command": "rg x"})) == "allow"))
+        checks.append(("denies third mutating tool after grant exhausted", decision(invoke(config_path, tool_name="Edit")) == "deny"))
+
+        cursor_direct_db = root / "cursor-direct.db"
+        cursor_direct_config = root / "cursor-direct-config.json"
+        init_db(cursor_direct_db)
+        write_config(cursor_direct_config, cursor_direct_db)
+        add_event(cursor_direct_db, session_id="s1", tool_name=CURSOR_THINKING_TOOL, status="ok", age_seconds=5)
+        checks.append(("allows write after raw Cursor MCP sequentialthinking event", decision(invoke(cursor_direct_config)) == "allow"))
+
+        canonical_db = root / "canonical.db"
+        canonical_config = root / "canonical-config.json"
+        init_db(canonical_db)
+        write_config(canonical_config, canonical_db)
+        add_event(canonical_db, session_id="s1", tool_name=CANONICAL_THINKING_TOOL, status="ok", age_seconds=5)
+        checks.append(("allows write after canonical Cursor adapter sequentialthinking event", decision(invoke(canonical_config)) == "allow"))
+
+        generic_call_mcp_db = root / "generic-call-mcp.db"
+        generic_call_mcp_config = root / "generic-call-mcp-config.json"
+        init_db(generic_call_mcp_db)
+        write_config(generic_call_mcp_config, generic_call_mcp_db)
+        add_event(generic_call_mcp_db, session_id="s1", tool_name=CALL_MCP_TOOL, status="ok", age_seconds=5)
+        checks.append(("generic CallMcpTool telemetry event does not grant", decision(invoke(generic_call_mcp_config)) == "deny"))
 
         later_non_thinking_db = root / "later-non-thinking.db"
         later_non_thinking_config = root / "later-non-thinking-config.json"

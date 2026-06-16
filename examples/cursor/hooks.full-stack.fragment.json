@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs beforeSubmitPrompt E:/hooks/inject-protocol/inject-protocol.mjs"
+      },
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs beforeSubmitPrompt E:/hooks/task-mode/task-mode-gate.mjs"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs preToolUse E:/hooks/task-mode/planning-start-gate.mjs",
+        "matcher": "Shell|Write|Delete|Edit|Task|NotebookEdit|apply_patch|MCP:ctx_batch_execute|MCP:ctx_execute|MCP:ctx_execute_file"
+      },
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs preToolUse E:/hooks/thinking-gate/thinking-gate.py"
+      },
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs preToolUse E:/hooks/loop-safety/loop-guard.py",
+        "matcher": "Shell|Write|Delete|Task|MCP:ctx_batch_execute|MCP:ctx_execute|MCP:ctx_execute_file|MCP:ctx_search|MCP:ctx_fetch_and_index"
+      }
+    ],
+    "postToolUse": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs postToolUse E:/hooks/hook-telemetry/log-event.py"
+      }
+    ],
+    "postToolUseFailure": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs postToolUseFailure E:/hooks/hook-telemetry/log-event.py"
+      }
+    ],
+    "stop": [
+      {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs stop E:/hooks/stop-completion-chain/stop-completion-chain.mjs",
+        "loop_limit": 8
+      }
+    ]
+  }
+}

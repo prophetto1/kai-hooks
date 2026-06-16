@@ -1,0 +1,8 @@
+# Paste into ~/.codex/config.toml (replace existing [[hooks.Stop]] block)
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "node E:/hooks/stop-completion-chain/stop-completion-chain.mjs"
+timeout = 360
+statusMessage = "Running completion gates (quality, Playwright, review)"

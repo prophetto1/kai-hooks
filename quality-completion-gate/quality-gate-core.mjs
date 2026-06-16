@@ -73,6 +73,25 @@ export function writeJson(value) {
   process.stdout.write(JSON.stringify(value));
 }
 
+export const STOP_REPORT_ONLY_PREFIX =
+  'COMPLETION GATE FAILED (report only — do not fix unless user asks):';
+
+/** Default report-only: Codex Stop treats decision:block as auto-steer to fix. */
+export function stopFailureMode(settings = {}) {
+  return settings.failureMode === 'block' ? 'block' : 'report-only';
+}
+
+export function stopFailureResponse(settings, reason) {
+  if (stopFailureMode(settings) === 'block') {
+    return { decision: 'block', reason };
+  }
+  return {
+    continue: true,
+    haltChain: true,
+    systemMessage: `${STOP_REPORT_ONLY_PREFIX}\n${reason}`,
+  };
+}
+
 export function normalizePath(value) {
   return String(value || '').trim().replaceAll('\\', '/');
 }
@@ -232,7 +251,7 @@ export function commandsForDomains(repoEntry, domainNames) {
   for (const domainName of domainNames) {
     const domain = repoEntry.domains?.[domainName];
     for (const command of Array.isArray(domain?.commands) ? domain.commands : []) {
-      const key = `${command.cwd || ''}\0${command.command}`;
+      const key = `${command.cwd || ''}\0${command.command}\0${JSON.stringify(command.env || {})}`;
       if (seen.has(key)) continue;
       seen.add(key);
       commands.push({ ...command, domain: domainName });
@@ -250,6 +269,27 @@ function commandTimeout(command, defaultTimeoutMs, remainingBudgetMs) {
   return { timeoutMs: bounded, budgetLimited: bounded < configured };
 }
 
+function expandEnvValue(value) {
+  return String(value)
+    .replace(/%([^%]+)%/g, (_, name) => process.env[name] ?? '')
+    .replace(/\$\{([^}]+)\}/g, (_, name) => process.env[name] ?? '');
+}
+
+function commandEnvironment(command) {
+  if (!command.env || typeof command.env !== 'object' || Array.isArray(command.env)) {
+    return process.env;
+  }
+  const env = { ...process.env };
+  for (const [key, value] of Object.entries(command.env)) {
+    if (value === null) {
+      delete env[key];
+    } else {
+      env[key] = expandEnvValue(value);
+    }
+  }
+  return env;
+}
+
 export function runVerifyCommand(repoRoot, command, defaultTimeoutMs, remainingBudgetMs = Infinity) {
   const cwd = command.cwd ? join(repoRoot, command.cwd) : repoRoot;
   const startedAt = Date.now();
@@ -260,6 +300,7 @@ export function runVerifyCommand(repoRoot, command, defaultTimeoutMs, remainingB
       encoding: 'utf8',
       timeout: timeoutMs,
       maxBuffer: command.maxBuffer || 1024 * 1024,
+      env: commandEnvironment(command),
       stdio: ['ignore', 'pipe', 'pipe']
     });
     return {

@@ -734,8 +734,31 @@ function validateThinkingGate(config, errors) {
     ))),
     'thinking-gate settings.bootstrapTools must map tool names to non-empty string arrays'
   );
+  pushIf(
+    errors,
+    s.readOnlyTools === undefined || (Array.isArray(s.readOnlyTools) && s.readOnlyTools.every((tool) => typeof tool === 'string' && tool.length > 0)),
+    'thinking-gate settings.readOnlyTools must be a string array when present'
+  );
   const tel = hookById(config, 'hook-telemetry');
   pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'thinking-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
+}
+
+function validateTaskModeGate(config, errors) {
+  const hook = hookById(config, 'task-mode-gate');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'UserPromptSubmit', 'task-mode-gate.event must be UserPromptSubmit');
+  pushIf(errors, hook.script?.path === 'task-mode/task-mode-gate.mjs', 'task-mode-gate.script.path mismatch');
+}
+
+function validatePlanningStartGate(config, errors) {
+  const hook = hookById(config, 'planning-start-gate');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'PreToolUse', 'planning-start-gate.event must be PreToolUse');
+  pushIf(errors, hook.script?.path === 'task-mode/planning-start-gate.mjs', 'planning-start-gate.script.path mismatch');
+  const taskMode = hookById(config, 'task-mode-gate');
+  pushIf(errors, isObject(taskMode), 'planning-start-gate requires hooks[id=task-mode-gate]');
+  const tel = hookById(config, 'hook-telemetry');
+  pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'planning-start-gate.enabled requires hook-telemetry.enabled');
 }
 
 function validateQualityCompletionGate(config, errors) {
@@ -769,6 +792,50 @@ function validateBrowserVerifyGate(config, errors) {
   pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'browser-verify-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
 }
 
+function validateAgentDiffCompletionGate(config, errors) {
+  const hook = hookById(config, 'agent-diff-completion-gate');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'Stop', 'agent-diff-completion-gate.event must be Stop');
+  pushIf(errors, hook.script?.path === 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', 'agent-diff-completion-gate.script.path mismatch');
+  const s = hook.settings || {};
+  pushIf(errors, positiveInteger(s.maxRepeatedBlocks), 'agent-diff-completion-gate settings.maxRepeatedBlocks invalid');
+  pushIf(
+    errors,
+    s.stateDir === undefined || (typeof s.stateDir === 'string' && s.stateDir.length > 0),
+    'agent-diff-completion-gate settings.stateDir must be a non-empty string when present'
+  );
+  const tel = hookById(config, 'hook-telemetry');
+  pushIf(
+    errors,
+    !(hook.enabled === true && isObject(tel) && tel.enabled === false),
+    'agent-diff-completion-gate.enabled requires hook-telemetry.enabled (it reads hook_events)'
+  );
+}
+
+function validateStopCompletionChain(config, errors) {
+  const script = (config.scripts || []).find((entry) => entry?.id === 'stop-completion-chain');
+  pushIf(errors, isObject(script), 'missing scripts[id=stop-completion-chain]');
+  if (!isObject(script)) return;
+  pushIf(errors, script.script?.path === 'stop-completion-chain/stop-completion-chain.mjs', 'stop-completion-chain.script.path mismatch');
+  const chain = script.settings?.chain;
+  pushIf(
+    errors,
+    nonEmptyStringArray(chain) && chain.every((id) => isObject(hookById(config, id))),
+    'stop-completion-chain settings.chain must list existing hook ids'
+  );
+  const s = script.settings || {};
+  pushIf(errors, positiveInteger(s.stepTimeoutMs), 'stop-completion-chain settings.stepTimeoutMs invalid');
+  const qualityGate = hookById(config, 'quality-completion-gate');
+  const qualityBudgetMs = qualityGate?.settings?.totalBudgetMs;
+  if (positiveInteger(s.stepTimeoutMs) && positiveInteger(qualityBudgetMs)) {
+    pushIf(
+      errors,
+      s.stepTimeoutMs > qualityBudgetMs,
+      'stop-completion-chain settings.stepTimeoutMs must exceed quality-completion-gate settings.totalBudgetMs'
+    );
+  }
+}
+
 function validateFrontendDesignGate(config, errors) {
   const hook = hookById(config, 'frontend-design-gate');
   if (!isObject(hook)) return; // optional hook — validate only when present
@@ -793,8 +860,12 @@ export function validateConfig(config) {
   validateMemoryNormalizer(config, errors);
   validateLoopSafety(config, errors);
   validateThinkingGate(config, errors);
+  validateTaskModeGate(config, errors);
+  validatePlanningStartGate(config, errors);
   validateQualityCompletionGate(config, errors);
   validateBrowserVerifyGate(config, errors);
+  validateAgentDiffCompletionGate(config, errors);
+  validateStopCompletionChain(config, errors);
   validateFrontendDesignGate(config, errors);
   validateSkillIndexer(config, errors);
   return { ok: errors.length === 0, errors };

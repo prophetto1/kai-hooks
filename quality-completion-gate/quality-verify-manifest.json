@@ -106,9 +106,47 @@
     {
       "name": "kai-chattr",
       "root": "E:/kai-chattr",
-      "disabledReason": "Temporarily disabled while hook control-plane refactor is in progress.",
       "blockOnUnmatched": false,
-      "domains": {}
+      "domains": {
+        "web": {
+          "paths": [
+            { "prefixes": ["apps/web/"] },
+            { "prefixes": ["tests/e2e/"] },
+            { "prefixes": [".cursor/"] }
+          ],
+          "commands": [
+            {
+              "label": "kai-chattr playwright settings e2e",
+              "command": "npx playwright test tests/e2e/settings-page.spec.ts",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304
+            },
+            {
+              "label": "kai-chattr playwright ui snapshot",
+              "command": "node scripts/dev/ui-snapshot.mjs",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304
+            }
+          ]
+        },
+        "api": {
+          "paths": [
+            { "prefixes": ["services/api/"] }
+          ],
+          "commands": [
+            {
+              "label": "kai-chattr api tests",
+              "command": "uv run python -m pytest tests/ -q",
+              "cwd": "services/api",
+              "env": {
+                "UV_PROJECT_ENVIRONMENT": "%LOCALAPPDATA%\\uv\\envs\\kai-chattr-services-api"
+              },
+              "timeoutMs": 180000,
+              "maxBuffer": 4194304
+            }
+          ]
+        }
+      }
     },
     {
       "name": "chattr",
@@ -162,7 +200,13 @@
                 "loop-safety/",
                 "memory-normalizer/",
                 "quality-completion-gate/",
+                "agent-diff-completion-gate/",
+                "browser-verify-gate/",
+                "stop-completion-chain/",
+                "adapters/",
+                "examples/",
                 "scripts/",
+                "task-mode/",
                 "thinking-gate/",
                 "telemetry/"
               ],
@@ -175,6 +219,7 @@
                 "codex-proposal.md",
                 "config.json",
                 "config.schema.json",
+                "changelog-hooks.md",
                 "skills-catalog.md"
               ]
             }
@@ -187,13 +232,15 @@
             { "label": "hooks memory runtime smoke", "command": "python memory-normalizer/test-memory-runtime.py", "timeoutMs": 30000 },
             { "label": "hooks read-only sqlite tests", "command": "python _core/test-hook-runtime.py && python inject-protocol/test-recall-readonly.py && python inject-protocol/test-suggest-readonly.py && python memory-normalizer/test-normalize-memory-tags-readonly.py && python memory-normalizer/test-maintain-readonly.py", "timeoutMs": 30000 },
             { "label": "hooks memory normalizer self-test", "command": "python memory-normalizer/normalize-after-store.py --self-test", "timeoutMs": 30000 },
-            { "label": "hooks thinking gate tests", "command": "python thinking-gate/test-thinking-gate.py", "timeoutMs": 30000 },
+            { "label": "hooks task mode core tests", "command": "node task-mode/test-task-mode-core.mjs", "timeoutMs": 30000 },
+            { "label": "hooks task mode gate self-test", "command": "node task-mode/task-mode-gate.mjs --self-test", "timeoutMs": 30000 },
             { "label": "hooks inject protocol self-test", "command": "node inject-protocol/test-inject-protocol-self-test.mjs", "timeoutMs": 30000 },
             { "label": "hooks index-skills tests", "command": "python inject-protocol/test-index-skills.py", "timeoutMs": 30000 },
             { "label": "hooks telemetry log-event tests", "command": "python hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
             { "label": "hooks browser verify gate tests", "command": "python browser-verify-gate/test-browser-verify-gate.py", "timeoutMs": 30000 },
+            { "label": "hooks agent diff completion gate smoke", "command": "node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs", "timeoutMs": 30000 },
             { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py browser-verify-gate/browser-verify-gate.py browser-verify-gate/test-browser-verify-gate.py", "timeoutMs": 30000 },
-            { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs", "timeoutMs": 30000 }
+            { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check stop-completion-chain/stop-completion-chain.mjs", "timeoutMs": 30000 }
           ]
         }
       }

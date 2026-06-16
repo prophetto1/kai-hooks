@@ -1,7 +1,7 @@
 {
   "$schema": "./config.schema.json",
   "version": 2,
-  "_intent": "Single source of truth for every tunable in the E:/hooks system. Scripts can read shared + their own entry; selected hooks are wired from the live Codex config.",
+  "_intent": "Single source of truth for every tunable in the E:/hooks system. Scripts can read shared + their own entry; Stop completion is wired via stop-completion-chain.mjs in Codex + Claude Code (see _docs/runtime-wiring.md).",
 
   "shared": {
     "paths": {
@@ -185,6 +185,8 @@
           "maxToolUses": 20
         },
         "thinkingTools": [
+          "MCP:sequentialthinking",
+          "CallMcpTool",
           "mcp__mcp_router__sequentialthinking",
           "mcp__mcp-router__sequentialthinking",
           "mcp__sequential-thinking__sequentialthinking",
@@ -193,9 +195,48 @@
           "mcp__plugin_sequentialthinking_sequentialthinking__sequentialthinking"
         ],
         "bootstrapTools": {
-          "ToolSearch": ["sequentialthinking", "sequential thinking"]
+          "ToolSearch": ["sequentialthinking", "sequential thinking"],
+          "CallMcpTool": ["sequentialthinking", "sequential thinking"]
         },
-        "_mode": "Active bounded grant. One successful configured thinking tool grants maxToolUses matched tool calls within ttlSeconds. Every matched non-thinking, non-bootstrap tool consumes one use; there is no read/write taxonomy or read-only exemption."
+        "readOnlyTools": [
+          "Read", "Grep", "Glob", "SemanticSearch", "WebSearch", "WebFetch",
+          "AskQuestion", "Await", "FetchMcpResource", "ListMcpResources", "SwitchMode"
+        ],
+        "_mode": "Mutating tools consume bounded grant. readOnlyTools are exempt and do not consume grant uses."
+      }
+    },
+
+    {
+      "id": "task-mode-gate",
+      "name": "Task Mode Classifier",
+      "description": "UserPromptSubmit: classify task mode (explore/implement/fix/refactor/review/docs) and inject required planning skills. Writes session state for planning-start-gate.",
+      "category": "push",
+      "event": "UserPromptSubmit",
+      "match": { "tools": ["*"] },
+      "script": { "path": "task-mode/task-mode-gate.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "stateDir": "E:/hooks/.state/task-mode",
+        "_doc": "E:/hooks/_docs/task-mode-and-skills.md"
+      }
+    },
+
+    {
+      "id": "planning-start-gate",
+      "name": "Planning Start Gate",
+      "description": "PreToolUse: before mutating tools, require mode-appropriate skill checkpoint (or sequential-thinking) for implement/fix/refactor/review sessions.",
+      "category": "gate",
+      "event": "PreToolUse",
+      "match": { "tools": ["*"] },
+      "script": { "path": "task-mode/planning-start-gate.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "stateDir": "E:/hooks/.state/task-mode",
+        "_doc": "E:/hooks/_docs/task-mode-and-skills.md"
       }
     },
 
@@ -363,13 +404,14 @@
       "match": { "tools": ["*"] },
       "script": { "path": "quality-completion-gate/quality-completion-gate.mjs", "runtime": "node" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
+      "enabled": true,
       "failPolicy": "open",
       "settings": {
         "verifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
         "authority": "exit-codes-only",
+        "failureMode": "report-only",
         "maxRepeatedFailureBlocks": 3,
-        "totalBudgetMs": 90000,
+        "totalBudgetMs": 240000,
         "inputs": ["git status --porcelain=v1", "quality-completion-gate/quality-verify-manifest.json"],
         "nonAuthority": ["PostToolUse telemetry", "assistant claims", "command text heuristics"]
       }
@@ -384,11 +426,11 @@
       "match": { "tools": ["*"] },
       "script": { "path": "browser-verify-gate/browser-verify-gate.py", "runtime": "python" },
       "scope": { "projects": ["*"], "paths": ["**"] },
-      "enabled": false,
+      "enabled": true,
       "failPolicy": "open",
       "settings": {
         "table": "hook_events",
-        "minToolUses": 15,
+        "minToolUses": 8,
         "maxRepeatedBlocks": 2,
         "requireSnapshot": true,
         "telemetryHookId": "hook-telemetry",
@@ -396,6 +438,28 @@
         "inspectPatterns": ["browser_snapshot", "take_snapshot", "browser_take_screenshot", "take_screenshot"],
         "stateDir": ".state/browser-verify-gate",
         "_note": "Large-turn in-browser verification gate. minToolUses = the 'larger than most tasks' threshold (tool firings this turn, counted from hook_events). requireSnapshot=true needs a navigate AND a snapshot/screenshot this turn. Depends on broad hook-telemetry. enabled=false until wired in settings.json/config.toml (+ Codex /hooks trust + Claude restart)."
+      }
+    },
+
+    {
+      "id": "agent-diff-completion-gate",
+      "name": "Agent Diff Completion Gate",
+      "description": "Stop gate by LOC tier: Playwright → verification-before-completion; 501+ LOC adds waza-hunt and 3 remediation loops.",
+      "category": "gate",
+      "event": "Stop",
+      "match": { "tools": ["*"] },
+      "script": { "path": "agent-diff-completion-gate/agent-diff-completion-gate.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "maxRepeatedBlocks": 3,
+        "failureMode": "report-only",
+        "maxRemediationLoops": 3,
+        "locSmallMax": 500,
+        "locLargeMin": 501,
+        "stateDir": ".state/agent-diff-completion-gate",
+        "_note": "LOC tiers: 1-500 = Playwright then verification-before-completion; 501+ adds waza-hunt and up to 3 remediation loops (fix → Playwright → verification)."
       }
     },
 
@@ -431,6 +495,22 @@
       "settings": {
         "model": "_core/config-model.mjs",
         "output": "config.schema.json"
+      }
+    },
+
+    {
+      "id": "stop-completion-chain",
+      "name": "Stop Completion Chain",
+      "description": "Canonical Stop orchestrator for Codex and Claude Code. Runs enabled completion gates in order: quality → agent-diff → browser.",
+      "category": "maintenance",
+      "trigger": "runtime-wire",
+      "script": { "path": "stop-completion-chain/stop-completion-chain.mjs", "runtime": "node" },
+      "enabled": true,
+      "settings": {
+        "chain": ["quality-completion-gate", "agent-diff-completion-gate", "browser-verify-gate"],
+        "failureMode": "report-only",
+        "stepTimeoutMs": 300000,
+        "_wireDoc": "_docs/runtime-wiring.md"
       }
     },
 
@@ -489,7 +569,7 @@
   ],
 
   "_notWired": {
-    "reason": "Historical migration notes for settings not yet consumed by all loaders. Some hooks are wired from Codex config.toml; this section tracks remaining cleanup.",
-    "cutoverRequires": []
+    "reason": "Stop completion is wired through stop-completion-chain.mjs. Cursor may use per-gate entries via adapters/cursor/run-hook.mjs. See _docs/runtime-wiring.md.",
+    "cutoverRequires": ["Trust updated Stop hook in ~/.codex/config.toml after editing", "Restart Claude Code after adding Stop hook to ~/.claude/settings.json"]
   }
 }

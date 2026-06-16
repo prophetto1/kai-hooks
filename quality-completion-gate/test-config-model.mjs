@@ -15,6 +15,12 @@ function hookById(source, id) {
   return hook;
 }
 
+function scriptById(source, id) {
+  const script = source.scripts.find((entry) => entry.id === id);
+  assert.ok(script, `${id} script must be present`);
+  return script;
+}
+
 const current = validateConfig(config);
 assert.deepEqual(current.errors, [], current.errors.join('\n'));
 
@@ -113,6 +119,25 @@ const badQualityBudgetResult = validateConfig(badQualityBudget);
 assert.ok(
   badQualityBudgetResult.errors.some((error) => error.includes('quality-completion-gate settings.totalBudgetMs invalid')),
   'quality-completion-gate total budget must be positive'
+);
+
+const badStopChainStepTimeout = structuredClone(config);
+scriptById(badStopChainStepTimeout, 'stop-completion-chain').settings.stepTimeoutMs = 0;
+const badStopChainStepTimeoutResult = validateConfig(badStopChainStepTimeout);
+assert.ok(
+  badStopChainStepTimeoutResult.errors.some((error) => error.includes('stop-completion-chain settings.stepTimeoutMs invalid')),
+  'stop-completion-chain step timeout must be positive'
+);
+
+const badStopChainBudgetOrder = structuredClone(config);
+scriptById(badStopChainBudgetOrder, 'stop-completion-chain').settings.stepTimeoutMs =
+  hookById(badStopChainBudgetOrder, 'quality-completion-gate').settings.totalBudgetMs;
+const badStopChainBudgetOrderResult = validateConfig(badStopChainBudgetOrder);
+assert.ok(
+  badStopChainBudgetOrderResult.errors.some((error) =>
+    error.includes('stop-completion-chain settings.stepTimeoutMs must exceed quality-completion-gate settings.totalBudgetMs')
+  ),
+  'stop-completion-chain step timeout must exceed the inner quality gate budget'
 );
 
 const badThinkingTools = structuredClone(config);
