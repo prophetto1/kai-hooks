@@ -56,6 +56,34 @@ def call_mcp_tool_name(tool_input) -> str:
     return ""
 
 
+def call_mcp_server_name(tool_input) -> str:
+    if not isinstance(tool_input, dict):
+        return ""
+    for key in ("server", "mcpServer", "mcp_server"):
+        value = tool_input.get(key)
+        if value:
+            return str(value)
+    return ""
+
+
+def is_browser_verification_tool(tool_name: str, tool_input=None) -> bool:
+    """Cursor in-IDE browser MCP tools verify localhost UI — never consume planning grants."""
+    name = str(tool_name or "")
+    if name.startswith("browser_"):
+        return True
+    if name in {"navigate_page", "take_snapshot", "take_screenshot"}:
+        return True
+    if name != "CallMcpTool":
+        return False
+    tool = call_mcp_tool_name(tool_input).lower()
+    server = call_mcp_server_name(tool_input).lower()
+    if tool.startswith("browser_"):
+        return True
+    if tool in {"navigate_page", "take_snapshot", "take_screenshot"}:
+        return True
+    return "browser" in server or "cursor-ide-browser" in server
+
+
 def normalize_thinking_tool_name(tool_name: str, tool_input=None) -> str:
     if tool_name == "MCP:sequentialthinking":
         return CANONICAL_THINKING_TOOL
@@ -272,6 +300,8 @@ def handler(payload, config, hcfg):
 
     settings = hcfg.get("settings", {})
     if tool_name in configured_read_only_tools(settings):
+        return
+    if is_browser_verification_tool(tool_name, payload.get("tool_input", {})):
         return
     thinking_tools = configured_thinking_tools(settings)
     tool_input = payload.get("tool_input", {})

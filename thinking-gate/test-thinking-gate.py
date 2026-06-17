@@ -193,11 +193,23 @@ def main() -> int:
             )) == "allow",
         ))
         checks.append((
-            "denies non-thinking CallMcpTool without grant",
+            "allows browser CallMcpTool without grant (localhost verification)",
             decision(invoke(
                 config_path,
                 tool_name=CALL_MCP_TOOL,
-                tool_input={"toolName": "browser_navigate", "server": "browser"},
+                tool_input={"toolName": "browser_navigate", "server": "cursor-ide-browser"},
+            )) == "allow",
+        ))
+        checks.append((
+            "allows browser_navigate without grant (localhost verification)",
+            decision(invoke(config_path, tool_name="browser_navigate", tool_input={"url": "http://127.0.0.1:8800/"})) == "allow",
+        ))
+        checks.append((
+            "denies non-browser non-thinking CallMcpTool without grant",
+            decision(invoke(
+                config_path,
+                tool_name=CALL_MCP_TOOL,
+                tool_input={"toolName": "memory_store", "server": "user-mcp-router"},
             )) == "deny",
         ))
         checks.append((
