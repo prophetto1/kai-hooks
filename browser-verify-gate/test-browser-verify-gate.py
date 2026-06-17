@@ -15,6 +15,7 @@ SCRIPT = HOOKS / "browser-verify-gate" / "browser-verify-gate.py"
 
 NAVIGATE_TOOL = "mcp__plugin_playwright_playwright__browser_navigate"
 SNAPSHOT_TOOL = "mcp__plugin_playwright_playwright__browser_snapshot"
+EDIT_TOOL = "apply_patch"
 
 
 def base_config(root: Path) -> dict:
@@ -39,6 +40,8 @@ def base_config(root: Path) -> dict:
             "requireSnapshot": True,
             "navigatePatterns": ["browser_navigate", "navigate_page"],
             "inspectPatterns": ["browser_snapshot", "take_snapshot", "browser_take_screenshot", "take_screenshot"],
+            "relevantToolPatterns": [],
+            "relevantTargetPatterns": ["apps/web/", "pnpm run build", "npm run build", "playwright", "ui-snapshot"],
             "stateDir": str(root / "state").replace("\\", "/"),
         },
     })
@@ -69,14 +72,14 @@ CREATE TABLE hook_events (
     con.close()
 
 
-def add_rows(path: Path, *, session_id: str, count: int, tool_name: str = "Bash", hook_id: str = "hook-telemetry") -> None:
+def add_rows(path: Path, *, session_id: str, count: int, tool_name: str = "Bash", target: str = "", hook_id: str = "hook-telemetry") -> None:
     con = sqlite3.connect(path)
     now = time.time()
     for index in range(count):
         con.execute(
             "INSERT INTO hook_events (ts, ts_iso, session_id, project, hook_id, event, tool_name, target, decision, status, duration_ms, detail) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (now + index, "2026-06-05T00:00:00Z", session_id, "", hook_id, "PostToolUse", tool_name, "", "", "ok", None, ""),
+            (now + index, "2026-06-05T00:00:00Z", session_id, "", hook_id, "PostToolUse", tool_name, target, "", "ok", None, ""),
         )
     con.commit()
     con.close()
@@ -120,29 +123,48 @@ def main() -> int:
         add_rows(db, session_id="small", count=10)
         checks.append(("small turn allows", decision(invoke(cfg, session_id="small")) == "allow"))
 
-        # 2) Large turn, no browser verification: block.
+        # 2) Large read-only turn with no browser-relevant signal: allow.
+        add_rows(db, session_id="readonly", count=20)
+        checks.append(("large read-only turn allows", decision(invoke(cfg, session_id="readonly")) == "allow"))
+
+        # 3) Large hooks-only patch turn: allow.
+        add_rows(db, session_id="hookspatch", count=20)
+        add_rows(
+            db,
+            session_id="hookspatch",
+            count=1,
+            tool_name=EDIT_TOOL,
+            target="*** Begin Patch\n*** Update File: E:/hooks/config.json\n+ apps/web/ playwright ui-snapshot\n",
+        )
+        checks.append(("large hooks-only patch allows", decision(invoke(cfg, session_id="hookspatch")) == "allow"))
+
+        # 4) Large browser-relevant turn, no browser verification: block.
         add_rows(db, session_id="large", count=20)
+        add_rows(db, session_id="large", count=1, tool_name=EDIT_TOOL, target="*** Update File: apps/web/src/routes/settings.tsx")
         checks.append(("large turn without browser blocks", decision(invoke(cfg, session_id="large")) == "block"))
 
-        # 3) Large turn with navigate + snapshot: allow.
+        # 5) Large browser-relevant turn with navigate + snapshot: allow.
         add_rows(db, session_id="verified", count=20)
+        add_rows(db, session_id="verified", count=1, tool_name=EDIT_TOOL, target="*** Update File: apps/web/src/routes/settings.tsx")
         add_rows(db, session_id="verified", count=1, tool_name=NAVIGATE_TOOL)
         add_rows(db, session_id="verified", count=1, tool_name=SNAPSHOT_TOOL)
         checks.append(("large turn with navigate+snapshot allows", decision(invoke(cfg, session_id="verified")) == "allow"))
 
-        # 4) Large turn navigated but not inspected (requireSnapshot=true): block.
+        # 6) Large browser-relevant turn navigated but not inspected (requireSnapshot=true): block.
         add_rows(db, session_id="navonly", count=20)
+        add_rows(db, session_id="navonly", count=1, tool_name=EDIT_TOOL, target="*** Update File: apps/web/src/routes/settings.tsx")
         add_rows(db, session_id="navonly", count=1, tool_name=NAVIGATE_TOOL)
         checks.append(("navigate without snapshot blocks", decision(invoke(cfg, session_id="navonly")) == "block"))
 
-        # 5) Loop-safety: after maxRepeatedBlocks consecutive blocks, release (allow).
+        # 7) Loop-safety: after maxRepeatedBlocks consecutive blocks, release (allow).
         add_rows(db, session_id="loop", count=20)
+        add_rows(db, session_id="loop", count=1, tool_name=EDIT_TOOL, target="*** Update File: apps/web/src/routes/settings.tsx")
         first = decision(invoke(cfg, session_id="loop", stop_active=False))
         second = decision(invoke(cfg, session_id="loop", stop_active=True))
         third = decision(invoke(cfg, session_id="loop", stop_active=True))
         checks.append(("loop blocks then releases", (first, second, third) == ("block", "block", "allow")))
 
-        # 6) Missing telemetry table -> allow (fail-open, no noise).
+        # 8) Missing telemetry table -> allow (fail-open, no noise).
         empty_db_cfg = root / "empty-config.json"
         empty_cfg = base_config(root)
         empty_cfg["shared"]["paths"]["hooksDb"] = str(root / "absent.db").replace("\\", "/")

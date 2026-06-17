@@ -8,6 +8,7 @@ import time
 
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+FTS_QUERY_TOKEN_RE = re.compile(r'"([^"]+)"|(\S+)')
 
 
 def identifier(value, label):
@@ -64,6 +65,21 @@ def connect_readonly(db_path):
     return con
 
 
+def quote_fts_term(value):
+    return '"' + value.replace('"', '""') + '"'
+
+
+def normalize_fts_query(query):
+    terms = []
+    for match in FTS_QUERY_TOKEN_RE.finditer(str(query or "")):
+        term = match.group(1) if match.group(1) is not None else match.group(2)
+        term = term.strip().strip("()")
+        if not term or term.upper() in {"AND", "OR", "NOT", "NEAR"}:
+            continue
+        terms.append(quote_fts_term(term))
+    return " OR ".join(terms)
+
+
 def scoring_policy(config):
     scoring = config["scoring"]
     scale = scoring["scoreScale"]
@@ -105,13 +121,16 @@ def main(argv):
     snippet_chars = positive_int(config["snippetChars"], "snippetChars")
     scoring = scoring_policy(config)
     cross_project_tag = config["crossProjectTag"]
+    match_query = normalize_fts_query(query)
+    if not match_query:
+        return 0
 
     sql = (
         f"SELECT m.content, rank, m.created_at, m.confidence "
         f"FROM {fts_table} f JOIN {join_table} m ON m.id=f.rowid "
         f"WHERE f.{fts_table} MATCH ? AND ({' AND '.join(filters)}) "
     )
-    params = [query]
+    params = [match_query]
     if project:
         sql += "AND (','||coalesce(m.tags,'')||',' LIKE ? OR ','||coalesce(m.tags,'')||',' LIKE ?) "
         params.extend([f"%,{project},%", f"%,{cross_project_tag},%"])

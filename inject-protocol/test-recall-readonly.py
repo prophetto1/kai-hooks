@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 
 
 RECALL = os.path.join(os.path.dirname(__file__), "recall.py")
@@ -56,8 +58,76 @@ def test_missing_db_is_not_created_by_recall() -> None:
             raise AssertionError(f"recall created missing DB file: {db_path}\nstdout={result.stdout}\nstderr={result.stderr}")
 
 
+def create_memory_db(db_path: str) -> None:
+    con = sqlite3.connect(db_path)
+    try:
+        con.executescript(
+            """
+            CREATE TABLE memories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_hash TEXT UNIQUE NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT,
+                memory_type TEXT,
+                metadata TEXT,
+                created_at REAL,
+                confidence REAL,
+                deleted_at REAL DEFAULT NULL
+            );
+            CREATE VIRTUAL TABLE memory_content_fts USING fts5(
+                content,
+                content='memories',
+                content_rowid='id',
+                tokenize='trigram'
+            );
+            """
+        )
+        content = (
+            "JWC Global platform memory anchor: jwc-global AI runtime pydantic providers. "
+            "Builds Chat uses full-stack-ai-agent-template as a conversation donor. "
+            "CareerOps uses JobSpy as the scanner."
+        )
+        cur = con.execute(
+            """
+            INSERT INTO memories (content_hash, content, tags, memory_type, metadata, created_at, confidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("jwc-memory-anchor", content, "jwc-global,all", "decision", "{}", time.time(), 1.0),
+        )
+        con.execute("INSERT INTO memory_content_fts(rowid, content) VALUES (?, ?)", (cur.lastrowid, content))
+        con.commit()
+    finally:
+        con.close()
+
+
+def test_hyphenated_query_terms_are_safe_for_fts() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = os.path.join(tmp, "memory.db")
+        create_memory_db(db_path)
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                RECALL,
+                db_path,
+                "jwc-global full-stack-ai-agent-template CareerOps JobSpy",
+                "jwc-global",
+                json.dumps(recall_config(), ensure_ascii=True),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise AssertionError(f"recall failed on hyphenated terms:\nstdout={result.stdout}\nstderr={result.stderr}")
+        if "JWC Global platform memory anchor" not in result.stdout:
+            raise AssertionError(f"recall did not return expected memory:\nstdout={result.stdout}\nstderr={result.stderr}")
+
+
 def main() -> int:
     test_missing_db_is_not_created_by_recall()
+    test_hyphenated_query_terms_are_safe_for_fts()
     print("recall read-only tests passed")
     return 0
 

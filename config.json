@@ -25,7 +25,9 @@
       { "slug": "kai-chattr",     "kind": "rebuild", "repoPath": "E:/kai-chattr",     "aliases": [] },
       { "slug": "kai",            "kind": "rebuild", "repoPath": "E:/kai-ai",         "aliases": ["kai-ai"] },
       { "slug": "writing-system", "kind": "legacy",  "repoPath": "E:/writing-system", "aliases": [] },
-      { "slug": "chattr",         "kind": "legacy",  "repoPath": "E:/chattr",         "aliases": [] }
+      { "slug": "chattr",         "kind": "legacy",  "repoPath": "E:/chattr",         "aliases": [] },
+      { "slug": "jwc-global",     "kind": "legacy",  "repoPath": "E:/jwc-global",     "aliases": [] },
+      { "slug": "dbase",          "kind": "legacy",  "repoPath": "E:/dbase",          "aliases": [] }
     ],
     "_projectsNote": "ONE model replacing divergent hardcoded project lists. Derive: detection slugs = slug + aliases; recall scope = matched-slug + 'all'; rebuild set (= tag-normalizer ACTIVE, gov-gate scope) = kind=='rebuild'; PROJECT set = all slugs + 'all'. Skill indexing is intentionally separate: E:/__skills warehouse + skills-catalog.md allowlist only.",
 
@@ -425,7 +427,7 @@
     {
       "id": "browser-verify-gate",
       "name": "Browser Verification Gate",
-      "description": "Stop gate: for large turns (> minToolUses tool calls this turn) require an in-browser Playwright verification (navigate + snapshot/screenshot) before completion. Reads hook_events telemetry to count the turn and detect browser use; blocks via Stop decision until verified, then releases. Loop-safe (maxRepeatedBlocks) and fail-open.",
+      "description": "Stop gate: for large browser-relevant turns (> minToolUses tool calls this turn plus edit/write/frontend runtime signals) require an in-browser Playwright verification (navigate + snapshot/screenshot) before completion. Reads hook_events telemetry to count the turn, detect browser relevance, and detect browser use; blocks via Stop decision until verified, then releases. Loop-safe (maxRepeatedBlocks) and fail-open.",
       "category": "gate",
       "event": "Stop",
       "match": { "tools": ["*"] },
@@ -441,8 +443,17 @@
         "telemetryHookId": "hook-telemetry",
         "navigatePatterns": ["browser_navigate", "navigate_page"],
         "inspectPatterns": ["browser_snapshot", "take_snapshot", "browser_take_screenshot", "take_screenshot"],
+        "relevantToolPatterns": [],
+        "relevantTargetPatterns": [
+          "apps/web/",
+          "npm run dev", "npm run build", "npm run test",
+          "pnpm run dev", "pnpm run build", "pnpm run test",
+          "yarn dev", "yarn build", "yarn test",
+          "bun run dev", "bun run build", "bun run test",
+          "next dev", "next build", "vite", "playwright", "ui-snapshot"
+        ],
         "stateDir": ".state/browser-verify-gate",
-        "_note": "Large-turn in-browser verification gate. minToolUses = the 'larger than most tasks' threshold (tool firings this turn, counted from hook_events). requireSnapshot=true needs a navigate AND a snapshot/screenshot this turn. Depends on broad hook-telemetry. enabled=false until wired in settings.json/config.toml (+ Codex /hooks trust + Claude restart)."
+        "_note": "Large-turn in-browser verification gate. minToolUses = the 'larger than most tasks' threshold (tool firings this turn, counted from hook_events). The gate only blocks when a row matches frontend/runtime relevantTargetPatterns, so hooks/config/docs handoffs are not forced into browser verification. requireSnapshot=true needs a navigate AND a snapshot/screenshot this turn. Depends on broad hook-telemetry."
       }
     },
 
@@ -564,7 +575,7 @@
       "settings": {
         "activeSlugs": ["blockdata", "kai-chattr", "kai"],
         "_activeSlugsNote": "= shared.projects where kind=='rebuild'. Listed for the python script; keep in sync with shared.projects.",
-        "projectSet": ["blockdata", "kai-chattr", "kai", "chattr", "writing-system", "all"],
+        "projectSet": ["blockdata", "kai-chattr", "kai", "chattr", "writing-system", "jwc-global", "dbase", "all"],
         "crossProjectTag": "all",
         "legacyRewrite": { "global": "all" },
         "reportUntagged": true,

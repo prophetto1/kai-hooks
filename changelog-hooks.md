@@ -10,6 +10,17 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-17
+
+- Changed: `browser-verify-gate` now blocks only large browser-relevant turns, using edit/write tool patterns and frontend runtime command patterns from config. Long read-only research, docs, and handoff turns no longer force a Playwright browser verification when there is no affected route to render.
+- Tests: Added browser-verify regression coverage for large read-only turns allowing, while edit-backed large turns still require navigate plus snapshot/screenshot evidence.
+- Changed: `browser-verify-gate` relevance is now target-driven instead of mutator-tool-name driven, so hooks/config patches do not trigger browser Stop interruptions while `apps/web/` and frontend runtime commands still do.
+- Fixed: `apply_patch` relevance now inspects only patch file headers, preventing diff body text like `apps/web/`, `playwright`, or `ui-snapshot` from making hooks/config edits look browser-relevant.
+
+- Changed: Added `jwc-global` to `config.json` shared project taxonomy so `E:/jwc-global` resolves to a real project scope in runtime detection and memory/project-set flows.
+- Changed: Added `dbase` to hook memory project taxonomy/project sets so `E:/dbase` resolves to a real recall scope without enabling rebuild/governance handling.
+- Fixed: `inject-protocol` memory recall now quotes FTS query terms in `recall.py`, so hyphenated project/tool names like `jwc-global` and `full-stack-ai-agent-template` no longer crash recall with FTS column-parse errors.
+
 - Changed: `thinking-gate` exempts Cursor browser MCP tools (`browser_*`, `CallMcpTool`→cursor-ide-browser) so live localhost verification is not blocked by planning grants.
 
 ### 2026-06-16 (c)

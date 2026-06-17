@@ -788,6 +788,8 @@ function validateBrowserVerifyGate(config, errors) {
   pushIf(errors, typeof s.requireSnapshot === 'boolean', 'browser-verify-gate settings.requireSnapshot must be boolean');
   pushIf(errors, nonEmptyStringArray(s.navigatePatterns), 'browser-verify-gate settings.navigatePatterns must be a non-empty string array');
   pushIf(errors, nonEmptyStringArray(s.inspectPatterns), 'browser-verify-gate settings.inspectPatterns must be a non-empty string array');
+  pushIf(errors, Array.isArray(s.relevantToolPatterns) && s.relevantToolPatterns.every((item) => typeof item === 'string' && item.length > 0), 'browser-verify-gate settings.relevantToolPatterns must be a string array');
+  pushIf(errors, nonEmptyStringArray(s.relevantTargetPatterns), 'browser-verify-gate settings.relevantTargetPatterns must be a non-empty string array');
   const tel = hookById(config, 'hook-telemetry');
   pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'browser-verify-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
 }
