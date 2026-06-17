@@ -200,8 +200,13 @@
         },
         "readOnlyTools": [
           "Read", "Grep", "Glob", "SemanticSearch", "WebSearch", "WebFetch",
-          "AskQuestion", "Await", "FetchMcpResource", "ListMcpResources", "SwitchMode"
+          "AskQuestion", "Await", "FetchMcpResource", "ListMcpResources", "SwitchMode",
+          "browser_navigate", "browser_snapshot", "browser_take_screenshot", "browser_tabs",
+          "browser_click", "browser_type", "browser_fill", "browser_lock", "browser_unlock",
+          "browser_scroll", "browser_press_key", "browser_select_option", "browser_drag",
+          "browser_highlight", "browser_get_bounding_box", "browser_mouse_click_xy", "browser_cdp"
         ],
+        "_browserNote": "browser_* tools and CallMcpTool→cursor-ide-browser are also exempt in thinking-gate.py (live localhost verification must not consume planning grants).",
         "_mode": "Mutating tools consume bounded grant. readOnlyTools are exempt and do not consume grant uses."
       }
     },
@@ -409,7 +414,7 @@
       "settings": {
         "verifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
         "authority": "exit-codes-only",
-        "failureMode": "report-only",
+        "failureMode": "block",
         "maxRepeatedFailureBlocks": 3,
         "totalBudgetMs": 240000,
         "inputs": ["git status --porcelain=v1", "quality-completion-gate/quality-verify-manifest.json"],
@@ -454,7 +459,7 @@
       "failPolicy": "open",
       "settings": {
         "maxRepeatedBlocks": 3,
-        "failureMode": "report-only",
+        "failureMode": "block",
         "maxRemediationLoops": 3,
         "locSmallMax": 500,
         "locLargeMin": 501,
@@ -508,7 +513,7 @@
       "enabled": true,
       "settings": {
         "chain": ["quality-completion-gate", "agent-diff-completion-gate", "browser-verify-gate"],
-        "failureMode": "report-only",
+        "failureMode": "block",
         "stepTimeoutMs": 300000,
         "_wireDoc": "_docs/runtime-wiring.md"
       }

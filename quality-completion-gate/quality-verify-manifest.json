@@ -122,8 +122,8 @@
               "maxBuffer": 4194304
             },
             {
-              "label": "kai-chattr playwright ui snapshot",
-              "command": "node scripts/dev/ui-snapshot.mjs",
+              "label": "kai-chattr playwright ui snapshot (live API)",
+              "command": "node scripts/dev/ui-snapshot-live.mjs",
               "timeoutMs": 120000,
               "maxBuffer": 4194304
             }
@@ -173,6 +173,13 @@
           ]
         }
       }
+    },
+    {
+      "name": "dbase",
+      "root": "E:/dbase",
+      "disabledReason": "Local Stop-gate checks would be bun-based, but this machine's global bun shim is broken ('The system cannot find the path specified'). dbase is authoritatively gated by its own .github/workflows/deploy-dev.yml CI (check:api-validation:strict, check:boundaries, check:realtime-prune, realtime type-check). Re-enable with an absolute bun.exe path once the shim is fixed and the rebrand sweep has landed.",
+      "blockOnUnmatched": false,
+      "domains": {}
     },
     {
       "name": "jwc-global",
