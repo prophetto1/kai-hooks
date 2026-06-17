@@ -10,6 +10,20 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+- Changed: `thinking-gate` exempts Cursor browser MCP tools (`browser_*`, `CallMcpTool`→cursor-ide-browser) so live localhost verification is not blocked by planning grants.
+
+### 2026-06-16 (c)
+
+- Added: `quality-completion-gate/verification-integrity.mjs` — explicit verification fraud policy, telemetry detection of mocked snapshot scripts, and session fraud-strike consequences on Stop.
+- Changed: `agent-diff-completion-gate` and `quality-completion-gate` block Stop when mocked verification is detected or when verification artifacts lack `liveApi:true`.
+- Changed: Injected per-prompt protocol section F documents verification fraud consequences; task-mode STOP docs mirror the policy.
+
+### 2026-06-16 (b)
+
+- Changed: Stop gates now require **live** Playwright verification for kai-chattr — `ui-snapshot-live.mjs` replaces mocked `ui-snapshot.mjs` in `quality-verify-manifest.json` and `agent-diff-completion-gate`.
+- Changed: `agent-diff-completion-gate` rejects verification runs unless `run.json` has `liveApi: true` (mocked Playwright intercepts fail the gate).
+- Changed: `quality-completion-gate`, `agent-diff-completion-gate`, and `stop-completion-chain` default `failureMode` to `block` so failed verification stops completion instead of report-only pass-through.
+
 ### 2026-06-16
 
 - Changed: `quality-completion-gate` now uses a per-repo single-flight lock so concurrent Codex/Cursor Stop chains do not launch duplicate manifest commands against shared state.

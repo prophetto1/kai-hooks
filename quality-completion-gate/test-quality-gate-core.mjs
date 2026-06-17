@@ -23,7 +23,7 @@ function withRepo(fn) {
     git(repo, ['config', 'user.name', 'Quality Gate Test']);
     fn(repo);
   } finally {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 
@@ -35,7 +35,7 @@ async function withRepoAsync(fn) {
     git(repo, ['config', 'user.name', 'Quality Gate Test']);
     await fn(repo);
   } finally {
-    rmSync(repo, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 }
 

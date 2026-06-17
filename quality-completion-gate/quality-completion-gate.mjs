@@ -18,6 +18,11 @@ import {
   touchedDomains,
   writeJson
 } from './quality-gate-core.mjs';
+import {
+  detectFraudulentVerificationInTelemetry,
+  isFraudulentVerificationCommand,
+  verificationFraudBlock,
+} from './verification-integrity.mjs';
 
 const runtime = hookRuntime(import.meta.url);
 const DEFAULT_MAX_REPEATED_FAILURE_BLOCKS = 3;
@@ -376,6 +381,36 @@ function evaluate(input) {
       `Quality completion gate found touched domains without commands: ${domainNames.join(', ')}.`,
       { kind: 'missing-domain-commands', domainNames },
       domainNames
+    );
+  }
+
+  for (const command of commands) {
+    if (isFraudulentVerificationCommand(command.command)) {
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        verificationFraudBlock(`Manifest declares a mocked verification command: ${command.command}`),
+        { kind: 'verification-fraud', command: command.command },
+        domainNames,
+      );
+    }
+  }
+
+  const sessionId = input.session_id || input.sessionId || '';
+  const hooksDb = runtime.shared?.paths?.hooksDb || 'E:/hooks/_db/hooks.db';
+  const telemetryFraud = detectFraudulentVerificationInTelemetry(hooksDb, sessionId, 0);
+  if (telemetryFraud.fraudulent) {
+    const detail = telemetryFraud.matches
+      .map((match) => `- ${match.detail || match.target || match.tool_name}`)
+      .join('\n');
+    return block(
+      runtime,
+      input,
+      repoRoot,
+      verificationFraudBlock(`Telemetry recorded mocked verification command(s) this session:\n${detail}`, 1),
+      { kind: 'verification-fraud-telemetry', matches: telemetryFraud.matches },
+      domainNames,
     );
   }
 

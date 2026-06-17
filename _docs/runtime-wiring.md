@@ -22,8 +22,12 @@ On `PostToolUse` and `PostToolUseFailure`. Without this, task-mode, thinking-gat
 ## PreToolUse (during)
 
 1. `task-mode/planning-start-gate.mjs` — mode checkpoint before mutators
-2. `thinking-gate/thinking-gate.py` — sequential-thinking grant (read-only tools exempt)
+2. `thinking-gate/thinking-gate.py` — sequential-thinking grant (read-only + browser MCP tools exempt)
 3. `loop-safety/loop-guard.py` — retry breaker
+
+Browser MCP (`browser_navigate`, `browser_snapshot`, etc.) is exempt from thinking-gate — it verifies live localhost UI and must not be blocked mid-session.
+
+Do not run `pnpm run dev` / `verify-runtime.mjs` while the user already has dev servers on 8800/8840 — that restarts or conflicts with active browser sessions.
 
 ## Stop (exit)
 
@@ -32,6 +36,10 @@ node E:/hooks/stop-completion-chain/stop-completion-chain.mjs
 ```
 
 Runs: quality-completion-gate → agent-diff-completion-gate (LOC tiers) → browser-verify-gate
+
+Verification for kai-chattr web changes must use `scripts/dev/ui-snapshot-live.mjs` (real API via Vite proxy).
+Mocked scripts (`ui-snapshot.mjs`, `ui-snapshot-route.mjs`) are dev smoke only — Stop gates reject runs without `run.json liveApi: true`.
+**Verification fraud** (mocked intercepts, citing non-live PNGs as proof) blocks Stop and records session fraud strikes; see `quality-completion-gate/verification-integrity.mjs`.
 
 The runtime validator checks live Codex and Cursor wiring for stale Stop hooks. Managed Stop
 entries must route through `stop-completion-chain`; direct per-gate Stop commands are invalid.

@@ -22,6 +22,12 @@ import {
   stopFailureResponse,
   writeJson,
 } from '../quality-completion-gate/quality-gate-core.mjs';
+import {
+  detectFraudulentVerificationInTelemetry,
+  isFraudulentVerificationCommand,
+  nextFraudStrike,
+  verificationFraudBlock,
+} from '../quality-completion-gate/verification-integrity.mjs';
 
 const DEFAULT_STATE_DIR = 'E:/hooks/.state/agent-diff-completion-gate';
 const LOC_SMALL_MAX = 500;
@@ -39,7 +45,7 @@ const REPO_RULES = {
   'E:/kai-chattr': {
     enforcePrefixes: ['apps/', 'services/', 'scripts/'],
     codeExtensions: ['.py', '.ts', '.tsx', '.js', '.mjs', '.cjs', '.css', '.json', '.ps1', '.toml'],
-    visualCommand: 'node scripts/dev/ui-snapshot.mjs',
+    visualCommand: 'sops exec-env secrets/dev/auth.yaml node scripts/dev/ui-snapshot-live.mjs',
     visualTimeoutMs: 120000,
     playwrightLabel: 'kai-chattr Playwright UI snapshot',
     verificationDir: 'docs/verification',
@@ -204,6 +210,37 @@ function verifyRunArtifacts(repoRoot, summary, rule) {
   }
 
   const runDirAbs = join(repoRoot, summary.runDir);
+  const runMetaPath = join(runDirAbs, 'run.json');
+  if (!existsSync(runMetaPath)) {
+    return { ok: false, reason: `Missing run.json in ${summary.runDir}` };
+  }
+  let runMeta;
+  try {
+    runMeta = JSON.parse(readFileSync(runMetaPath, 'utf8'));
+  } catch {
+    return { ok: false, reason: `Unreadable run.json in ${summary.runDir}` };
+  }
+  if (runMeta.liveApi !== true) {
+    return {
+      ok: false,
+      fraud: true,
+      reason: verificationFraudBlock(
+        `Verification run in ${summary.runDir} is not live (run.json liveApi !== true). ` +
+          'Mocked Playwright intercepts and synthetic API responses are rejected.',
+      ),
+    };
+  }
+  if (runMeta.frontendLogin !== true) {
+    return {
+      ok: false,
+      fraud: true,
+      reason: verificationFraudBlock(
+        `Verification run in ${summary.runDir} did not sign in through /login (run.json frontendLogin !== true). ` +
+          'Token injection and local-session shortcuts are rejected.',
+      ),
+    };
+  }
+
   const reportPath = join(runDirAbs, 'report.json');
   if (!existsSync(reportPath)) {
     return { ok: false, reason: `Missing report.json in ${summary.runDir}` };
@@ -286,6 +323,47 @@ function hooksDbPath(runtime) {
   return runtime.shared?.paths?.hooksDb || 'E:/hooks/_db/hooks.db';
 }
 
+function auditVerificationFraud(sessionId, rule, state, runtime) {
+  const strikes = Number(state.fraudStrikes || 0);
+  if (strikes >= 3) {
+    return {
+      blocked: true,
+      strikes,
+      message: verificationFraudBlock(
+        'Session verification integrity limit reached due to prior fraudulent verification attempts.',
+        strikes,
+      ),
+    };
+  }
+
+  const telemetry = detectFraudulentVerificationInTelemetry(hooksDbPath(runtime), sessionId, 0);
+  if (telemetry.fraudulent) {
+    const nextStrike = nextFraudStrike(strikes);
+    const detail = telemetry.matches
+      .map((match) => `- ${match.detail || match.target || match.tool_name}`)
+      .join('\n');
+    return {
+      blocked: true,
+      strikes: nextStrike,
+      message: verificationFraudBlock(
+        `Telemetry recorded mocked verification command(s) this session:\n${detail}`,
+        nextStrike,
+      ),
+    };
+  }
+
+  if (isFraudulentVerificationCommand(rule.visualCommand)) {
+    const nextStrike = nextFraudStrike(strikes);
+    return {
+      blocked: true,
+      strikes: nextStrike,
+      message: verificationFraudBlock(`Configured visual command is fraudulent: ${rule.visualCommand}`, nextStrike),
+    };
+  }
+
+  return { blocked: false, strikes };
+}
+
 function telemetryMatches(sessionId, sinceId, runtime, patterns) {
   const dbPath = hooksDbPath(runtime);
   if (!existsSync(dbPath) || !sessionId) return false;
@@ -339,8 +417,8 @@ function block(runtime, reason) {
 
 function buildPlaywrightSection(visualResult, rule) {
   const lines = [
-    '## Step 1 — Playwright (runs first; gate executed this on Stop)',
-    `Screenshots must be under ${rule.verificationDir}/<timestamp>/ with all routes "ok" in report.json.`,
+    '## Step 1 — Playwright LIVE (runs first; gate executed this on Stop)',
+    `Screenshots must be under ${rule.verificationDir}/<timestamp>/ with run.json liveApi:true and all routes "ok" in report.json.`,
   ];
   if (visualResult?.artifacts?.ok) {
     lines.push(
@@ -473,11 +551,26 @@ function evaluate(input, runtime) {
 
   const runtimeForTelemetry = runtime;
 
-  // Step 1: Playwright (always on Stop while diff exists)
+  const fraudAudit = auditVerificationFraud(sessionId, rule, state, runtimeForTelemetry);
+  if (fraudAudit.blocked) {
+    writeState(stateFile, {
+      ...state,
+      diffSignature,
+      locTotal: loc.total,
+      tier,
+      fraudStrikes: fraudAudit.strikes,
+    });
+    return block(runtime, fraudAudit.message);
+  }
+
+  // Step 1: Playwright LIVE (always on Stop while diff exists)
   const visualResult = runVisualCheck(repoRoot, rule);
   const playwrightPass = visualResult.ok;
 
   if (!playwrightPass) {
+    const fraudStrikes = visualResult.artifacts?.fraud
+      ? nextFraudStrike(state.fraudStrikes)
+      : Number(state.fraudStrikes || 0);
     if (state.wazaHuntDone && tier === 'large') {
       remediationCycle += 1;
     }
@@ -492,7 +585,22 @@ function evaluate(input, runtime) {
       wazaHuntDone: state.wazaHuntDone && sameDiff ? state.wazaHuntDone : false,
       changedInScope,
       verificationRunDir: visualResult.artifacts?.runDir ?? null,
+      fraudStrikes,
     });
+
+    const blockReason = visualResult.artifacts?.fraud
+      ? visualResult.artifacts.reason
+      : buildChecklist({
+          repoRoot,
+          rule,
+          changedInScope,
+          loc,
+          tier,
+          visualResult,
+          phase: 'playwright',
+          remediationCycle,
+          maxLoops: maxRemediationLoops,
+        });
 
     if (remediationCycle > maxRemediationLoops) {
       return {
@@ -503,20 +611,7 @@ function evaluate(input, runtime) {
       };
     }
 
-    return block(
-      runtime,
-      buildChecklist({
-        repoRoot,
-        rule,
-        changedInScope,
-        loc,
-        tier,
-        visualResult,
-        phase: 'playwright',
-        remediationCycle,
-        maxLoops: maxRemediationLoops,
-      }),
-    );
+    return block(runtime, blockReason);
   }
 
   // Step 2: verification-before-completion (after Playwright)

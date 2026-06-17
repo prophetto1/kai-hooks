@@ -48,6 +48,8 @@ Read-only tools (`Read`, `Grep`, `Glob`, `SemanticSearch`, `WebSearch`, `WebFetc
 
 ### STOP — after diff exists (`agent-diff-completion-gate` + `quality-completion-gate`)
 
+**Verification fraud policy (enforced on Stop):** Mocked Playwright, fake API intercepts, or citing non-live verification PNGs as proof is **fraud**. Stop is blocked; fraud strikes accrue per session (3 strikes → integrity-violated — report honestly, never claim done). Live verification only (`run.json` must have `liveApi:true`).
+
 | LOC (in-scope) | Required |
 |----------------|----------|
 | Any operational diff | `verification-before-completion` |

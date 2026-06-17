@@ -24,5 +24,10 @@ Conform to the repo's `contracts/`/`governance/` first — guardrails block non-
 - Before claiming completion for any codebase change, update the matching project `changelog.md` in Planned.
 - Minimum endpoints: `GET /stores/planned/tree`, `GET /stores/planned/nodes/{node_id}`, `PUT /stores/planned/nodes/{node_id}/content`, `POST /stores/planned/files`.
 
-## F. Map
+## F. Verification integrity (fraud = blocked Stop)
+- Fabricating verification is fraud: mocked Playwright API intercepts, citing PNGs from non-live runs (`run.json` without `liveApi:true`), or claiming verified/passing/done while the real stack is broken.
+- Consequences: Stop blocked immediately; fraud strikes recorded per session; at 3 strikes report honestly to the user — do NOT claim done.
+- Required: live verification only (`ui-snapshot-live.mjs`, `verify-platform-visual-manifest-live.mjs`). Restart dev servers after runtime changes yourself. Fix the real API/page — never bypass with mocks to satisfy the gate.
+
+## G. Map
 - Clean targets ← legacy sources (copy-only, governance-first, outside-in): **blockdata ← writing-system**, **kai-chattr ← chattr**. Both clean repos: Python FastAPI backend + Fumadocs devdocs.
