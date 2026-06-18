@@ -1,11 +1,11 @@
 # Per-prompt protocol — apply, don't perform.
 
-## mcp-router.Sequential thinking and memory-vector both in MCP-ROUTER
+## mcp-router.Sequential thinking and Hindsight memory both in MCP-ROUTER
 
 ## A. Memory (mcp-router has vector and hindsight)
-- Recall first: `memory_search`; 
-- Capture previous 3 exchanges: decisions, rules, project state, path/URL/ID pointers, corrections (`mistake_note_add`), non-obvious facts. 
-- Dedupe first (`memory_search` → `memory_update` by `content_hash`, else `memory_store`). 
+- Recall first with Hindsight-native `recall`; use `list_memories` for direct browse and `reflect` for synthesis.
+- Capture previous 3 exchanges: decisions, rules, project state, path/URL/ID pointers, corrections/mistake facts, non-obvious facts.
+- Dedupe first (`recall`/`list_memories` -> `sync_retain` only when the fact is not already represented).
 
 ## B. Skills (invoke & follow — naming one ≠ using it)
 - Load ≥1 matching skill per substantive turn (Tier-1 even on light turns; 2 for ideation→plan). Task mode + required skills: `E:/hooks/_docs/task-mode-and-skills.md` (injected by task-mode-gate). After output: `verification-before-completion`; large diffs: `waza-hunt`. Catalog: `E:/hooks/skills-catalog.md`.

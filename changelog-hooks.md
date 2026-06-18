@@ -10,6 +10,23 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-18
+
+- Fixed: `quality-completion-gate` single-flight contention now exits quietly with
+  `continue: true` instead of emitting a blocking "already running" Stop prompt
+  that can recursively retrigger itself.
+- Tests: Updated the single-flight regression to cover block-mode contention
+  without duplicate manifest execution or repeated Stop messages.
+- Fixed: `quality-completion-gate` now ignores dirty nested reference git repos
+  under managed parent repos when the nested root lives below `_extract_ref/`,
+  `_references/`, `_sources/`, or `vendor/`. This prevents unrelated Stop turns
+  from repeatedly reporting missing manifest entries for paths such as
+  `E:/kai-chattr/_extract_ref/pydantic-ai`.
+- Added: Regression coverage proving a dirty nested `_extract_ref/pydantic-ai`
+  git repo under a manifest-managed parent returns `{"continue":true}` instead
+  of a report-only missing-repo-entry failure.
+- Changed: `inject-protocol/per-prompt-protocol_original.md` now names the Hindsight-native MCP Router memory tools (`recall`, `list_memories`, `reflect`, `sync_retain`) instead of the stale `memory_search`/`memory_store` vector-memory wrapper wording.
+
 ### 2026-06-17
 
 - Changed: `browser-verify-gate` now blocks only large browser-relevant turns, using edit/write tool patterns and frontend runtime command patterns from config. Long read-only research, docs, and handoff turns no longer force a Playwright browser verification when there is no affected route to render.

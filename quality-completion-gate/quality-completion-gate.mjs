@@ -27,6 +27,12 @@ import {
 const runtime = hookRuntime(import.meta.url);
 const DEFAULT_MAX_REPEATED_FAILURE_BLOCKS = 3;
 const DEFAULT_TOTAL_BUDGET_MS = 90000;
+const REFERENCE_REPO_SEGMENTS = new Set([
+  '_extract_ref',
+  '_references',
+  '_sources',
+  'vendor',
+]);
 
 function formatFailure(result) {
   const output = result.output ? `\n${result.output}` : '';
@@ -99,6 +105,27 @@ function knownRepoForCwd(manifestData, cwd) {
     const root = normalizeAbsolute(repo.root);
     return root && (normalizedCwd === root || normalizedCwd.startsWith(`${root}/`));
   }) || null;
+}
+
+function referenceChildRepoForCwd(manifestData, cwd, repoRoot) {
+  const managedRepo = knownRepoForCwd(manifestData, cwd);
+  if (!managedRepo) return null;
+
+  const managedRoot = normalizeAbsolute(managedRepo.root);
+  const normalizedRepoRoot = normalizeAbsolute(repoRoot);
+  if (!managedRoot || normalizedRepoRoot === managedRoot) return null;
+  if (!normalizedRepoRoot.startsWith(`${managedRoot}/`)) return null;
+
+  const relativeSegments = normalizedRepoRoot
+    .slice(managedRoot.length + 1)
+    .toLowerCase()
+    .split('/')
+    .filter(Boolean);
+  if (!relativeSegments.some((segment) => REFERENCE_REPO_SEGMENTS.has(segment))) {
+    return null;
+  }
+
+  return managedRepo;
 }
 
 function failureSignature(repoRoot, domainNames, payload) {
@@ -267,6 +294,7 @@ function acquireSingleFlight(activeRuntime, input, repoRoot, domainNames, totalB
         : '';
       return {
         ok: false,
+        alreadyRunning: true,
         reason:
           `Quality completion gate is already running for ${repoRoot}. ` +
           `Do not start another gate, wait, poll, or debug.${detail}`
@@ -343,6 +371,10 @@ function evaluate(input) {
 
   const repoEntry = repoEntryForRoot(manifest.data, repoRoot);
   if (!repoEntry) {
+    if (referenceChildRepoForCwd(manifest.data, cwd, repoRoot)) {
+      clearState(runtime, input, repoRoot);
+      return { continue: true };
+    }
     return block(
       runtime,
       input,
@@ -417,6 +449,10 @@ function evaluate(input) {
   const totalBudgetMs = positiveInteger(runtime.settings.totalBudgetMs, DEFAULT_TOTAL_BUDGET_MS);
   const lock = acquireSingleFlight(runtime, input, repoRoot, domainNames, totalBudgetMs);
   if (!lock.ok) {
+    if (lock.alreadyRunning) {
+      runtime.debug(lock.reason);
+      return { continue: true };
+    }
     return stopFailureResponse(runtime.settings, lock.reason);
   }
 

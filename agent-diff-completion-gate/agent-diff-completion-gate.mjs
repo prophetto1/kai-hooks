@@ -45,7 +45,7 @@ const REPO_RULES = {
   'E:/kai-chattr': {
     enforcePrefixes: ['apps/', 'services/', 'scripts/'],
     codeExtensions: ['.py', '.ts', '.tsx', '.js', '.mjs', '.cjs', '.css', '.json', '.ps1', '.toml'],
-    visualCommand: 'sops exec-env secrets/dev/auth.yaml node scripts/dev/ui-snapshot-live.mjs',
+    visualCommand: 'sops exec-env secrets/dev/auth.yaml "node scripts/dev/ui-snapshot-live.mjs"',
     visualTimeoutMs: 120000,
     playwrightLabel: 'kai-chattr Playwright UI snapshot',
     verificationDir: 'docs/verification',

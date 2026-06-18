@@ -47,8 +47,8 @@ For Codex, keep the outer Stop timeout at least 60s above the chain step timeout
 For Cursor, user-level and project-level Stop hooks are not additive-safe. If user-level Cursor
 Stop is wired, project `.cursor/hooks.json` files must not also define managed Stop hooks.
 The quality gate is single-flight per repo. If two runtimes fire Stop at the same time, the first
-gate owns the manifest command run and the second blocks with an "already running" message instead
-of launching duplicate tests against shared state.
+gate owns the manifest command run and the second exits quietly with `continue: true` instead of
+launching duplicate tests or forcing a repeated "already running" Stop prompt.
 
 ## Codex
 

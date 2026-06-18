@@ -15,6 +15,10 @@ function git(repo, args) {
   });
 }
 
+function removeTempTree(path) {
+  rmSync(path, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+}
+
 function withRepo(fn) {
   const repo = mkdtempSync(join(tmpdir(), 'quality-gate-core-'));
   try {
@@ -23,7 +27,7 @@ function withRepo(fn) {
     git(repo, ['config', 'user.name', 'Quality Gate Test']);
     fn(repo);
   } finally {
-    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeTempTree(repo);
   }
 }
 
@@ -35,7 +39,7 @@ async function withRepoAsync(fn) {
     git(repo, ['config', 'user.name', 'Quality Gate Test']);
     await fn(repo);
   } finally {
-    rmSync(repo, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    removeTempTree(repo);
   }
 }
 
@@ -317,7 +321,7 @@ function testRunVerifyCommandHonorsCommandEnv() {
   });
 }
 
-async function testConcurrentQualityGateBlocksWithoutRunningCommandsTwice() {
+async function testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwice() {
   await withRepoAsync(async (repo) => {
     const root = mkdtempSync(join(tmpdir(), 'quality-gate-single-flight-'));
     const manifestPath = join(root, 'manifest.json');
@@ -333,6 +337,7 @@ async function testConcurrentQualityGateBlocksWithoutRunningCommandsTwice() {
       }
     ]));
     writeJson(configPath, configFor(manifestPath, stateDir, {
+      failureMode: 'block',
       totalBudgetMs: 5000,
       singleFlightStaleMs: 10000
     }));
@@ -344,9 +349,7 @@ async function testConcurrentQualityGateBlocksWithoutRunningCommandsTwice() {
 
     const startedAt = Date.now();
     const second = stopGate({ ...payload, session_id: 'single-flight-session-2' }, env);
-    assert.equal(second.continue, true);
-    assert.equal(second.haltChain, true);
-    assert.match(second.systemMessage, /already running/i);
+    assert.deepEqual(second, { continue: true });
     assert.ok(Date.now() - startedAt < 500, 'second gate should not wait for the slow command');
 
     const firstResult = await waitForStopGate(first);
@@ -388,6 +391,41 @@ function testDeadOwnerSingleFlightLockIsCleared() {
   });
 }
 
+function testNestedReferenceRepoUnderManagedRepoIsIgnored() {
+  withRepo((repo) => {
+    const root = mkdtempSync(join(tmpdir(), 'quality-gate-reference-repo-'));
+    const manifestPath = join(root, 'manifest.json');
+    const configPath = join(root, 'config.json');
+    const stateDir = join(root, 'state');
+    const nestedRepo = join(repo, '_extract_ref', 'pydantic-ai');
+    mkdirSync(nestedRepo, { recursive: true });
+    git(nestedRepo, ['init']);
+    git(nestedRepo, ['config', 'user.email', 'test@example.invalid']);
+    git(nestedRepo, ['config', 'user.name', 'Quality Gate Test']);
+    writeFileSync(join(nestedRepo, 'README.md'), 'dirty reference repo', 'utf8');
+    writeJson(manifestPath, {
+      repos: [
+        {
+          name: 'managed-parent',
+          root: repo,
+          blockOnUnmatched: false,
+          domains: {}
+        }
+      ]
+    });
+    writeJson(configPath, configFor(manifestPath, stateDir, { failureMode: 'report-only' }));
+
+    const result = stopGate(
+      { session_id: 'nested-reference-session', cwd: nestedRepo, hook_event_name: 'Stop' },
+      { HOOKS_CONFIG_PATH: configPath },
+    );
+
+    assert.deepEqual(result, { continue: true });
+
+    rmSync(root, { recursive: true, force: true });
+  });
+}
+
 testChangedFilesHandlesSpacesAndRenames();
 testGitInspectionReturnsStructuredFailures();
 testTouchedDomainsReportsUnmatchedNormalizedPaths();
@@ -396,6 +434,7 @@ testStopContinuationRerunsVerificationAndLoopsOut();
 testStopBudgetLimitsSlowCommands();
 testStateWriteFailureStillBlocks();
 testRunVerifyCommandHonorsCommandEnv();
-await testConcurrentQualityGateBlocksWithoutRunningCommandsTwice();
+await testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwice();
 testDeadOwnerSingleFlightLockIsCleared();
+testNestedReferenceRepoUnderManagedRepoIsIgnored();
 console.log('quality gate core tests passed');
