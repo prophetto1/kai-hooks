@@ -25,24 +25,18 @@ LIB = ROOT / "_core"
 sys.path.insert(0, str(LIB))
 sys.path.insert(0, str(HOOK_DIR))
 
-from hook_runtime import connect, detect_project, hooks_db, run, safe_table  # noqa: E402
+from hook_runtime import (  # noqa: E402
+    MEMORY_MUTATION_BASE_TOOLS,
+    connect,
+    detect_project,
+    hooks_db,
+    resolve_match_tools,
+    run,
+    safe_table,
+)
 from memory_retain import build_retain_payload, normalize_tags, tags_to_string  # noqa: E402
 
 HOOK_ID = "memory-normalizer"
-MEMORY_MUTATION_TOOLS = (
-    "memory_store",
-    "memory_update",
-    "memory_store_session",
-    "memory_observe",
-    "memory_harvest",
-    "memory_ingest",
-    "memory_resolve",
-    "memory_cleanup",
-    "memory_delete",
-    "mistake_note_add",
-)
-MCP_TOOL_PREFIXES = ("", "mcp__mcp_router__", "mcp__mcp-router__", "mcp__memory-sqlite__", "mcp__memory_sqlite__")
-DEFAULT_TOOLS = {f"{prefix}{tool}" for prefix in MCP_TOOL_PREFIXES for tool in MEMORY_MUTATION_TOOLS}
 AUDIT_ONLY_TOOLS = {"memory_delete"}
 HASH_KEYS = {"content_hash", "contentHash", "hash", "memory_hash", "memoryHash"}
 HASH_LIST_KEYS = {"content_hashes", "contentHashes", "hashes", "memory_hashes", "memoryHashes"}
@@ -142,7 +136,7 @@ def flatten_text(value: Any) -> str:
 
 
 def memory_tool_suffix(tool_name: str) -> str:
-    for suffix in MEMORY_MUTATION_TOOLS:
+    for suffix in MEMORY_MUTATION_BASE_TOOLS:
         if tool_name == suffix or tool_name.endswith(f"__{suffix}"):
             return suffix
     return ""
@@ -451,7 +445,7 @@ def normalize_rows(
 
 def normalize_store(payload: dict[str, Any], config: dict[str, Any], hcfg: dict[str, Any]) -> dict[str, Any]:
     settings = hcfg.get("settings", {})
-    tools = set(settings.get("sourceTools") or (hcfg.get("match") or {}).get("tools") or DEFAULT_TOOLS)
+    tools = resolve_match_tools(hcfg, config)
     tool_name = payload.get("tool_name", "")
     if tool_name and "*" not in tools and tool_name not in tools:
         return {"decision": "skip", "status": "ok", "reason": "tool not configured", "toolName": tool_name}
@@ -608,17 +602,7 @@ CREATE TABLE memories (
         }
         hcfg = {
             "settings": {"table": "hook_events", "detailMaxChars": 1000},
-            "match": {
-                "tools": [
-                    "mcp__mcp_router__memory_store",
-                    "mcp__mcp_router__memory_update",
-                    "mcp__mcp_router__memory_store_session",
-                    "mcp__mcp_router__memory_observe",
-                    "mcp__mcp_router__memory_harvest",
-                    "mcp__mcp_router__mistake_note_add",
-                    "mcp__mcp_router__memory_delete",
-                ]
-            },
+            "match": {"toolGroup": "memoryMutation"},
         }
         payload = {
             "hook_event_name": "PostToolUse",

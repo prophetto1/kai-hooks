@@ -17,8 +17,6 @@ const DEBUG = process.env.HOOK_DEBUG === '1' || process.argv.includes('--debug')
 const STARTED_AT = Date.now();
 const STATE_DIR = join(dirname(here), '.state');
 const EVENT_LOG = join(STATE_DIR, `${ID}-events.jsonl`);
-const PY_MAX_BUFFER = 10 * 1024 * 1024;
-const TRANSCRIPT_TAIL_BYTES = 256 * 1024;
 const MEMORY_FILTER_SQL = Object.freeze({
   'not-deleted': 'm.deleted_at IS NULL',
   'not-superseded': "(m.superseded_by IS NULL OR m.superseded_by='')"
@@ -105,6 +103,7 @@ function buildSettings(selfSettings) {
   return {
     protocolFile: selfSettings.sources.protocol.file,
     terms: selfSettings.terms,
+    runtime: selfSettings.runtime,
     memory: selfSettings.sources.memory,
     skills: selfSettings.sources.skills,
     output: selfSettings.output
@@ -124,7 +123,7 @@ const S = buildSettings(SELF.settings);
 const DB = SHARED.paths.memoryDb;
 const STOP = new Set(SHARED.stopwords.split(/\s+/).filter(Boolean));
 const PYENV = { ...process.env, ...(SHARED.runtime.pythonEnv || {}) };
-const clip = (text, max = 4000) => {
+const clip = (text, max) => {
   const value = (text || '').toString().trim();
   return value.length > max ? `${value.slice(0, max)} ...` : value;
 };
@@ -136,7 +135,7 @@ const py = (label, scriptPath, args) => {
       encoding: 'utf8',
       timeout: SHARED.runtime.pythonTimeoutMs,
       env: PYENV,
-      maxBuffer: PY_MAX_BUFFER,
+      maxBuffer: S.runtime.pythonMaxBufferBytes,
       stdio: ['ignore', 'pipe', 'pipe']
     }).split('\n').filter(Boolean);
     const elapsedMs = Date.now() - start;
@@ -144,8 +143,8 @@ const py = (label, scriptPath, args) => {
     return { ok: true, label, lines, elapsedMs };
   } catch (err) {
     const elapsedMs = Date.now() - start;
-    const stderr = clip(err.stderr);
-    const stdout = clip(err.stdout);
+    const stderr = clip(err.stderr, S.runtime.diagnosticClipChars);
+    const stdout = clip(err.stdout, S.runtime.diagnosticClipChars);
     const details = stderr || stdout;
     const error = `${err.message}${details ? `\n${details}` : ''}`;
     safeEvent('source-error', { label, elapsedMs, error });
@@ -192,7 +191,7 @@ function extract(text) {
   return (text.toLowerCase().match(TERM_RE) || []).filter(w => !STOP.has(w));
 }
 
-function readTextTail(path, maxBytes = TRANSCRIPT_TAIL_BYTES) {
+function readTextTail(path, maxBytes) {
   const fd = openSync(path, 'r');
   try {
     const size = fstatSync(fd).size;
@@ -210,7 +209,7 @@ function recentUserText(o, cur, n) {
   const transcriptPath = o.transcript_path || o.transcriptPath;
   if (!transcriptPath) return [];
   try {
-    const lines = readTextTail(transcriptPath).split('\n').filter(Boolean);
+    const lines = readTextTail(transcriptPath, S.runtime.transcriptTailBytes).split('\n').filter(Boolean);
     const users = [];
     for (let i = lines.length - 1; i >= 0 && users.length < n; i--) {
       let m;
@@ -267,7 +266,7 @@ function sourceDiagnostics(results) {
     .filter(Boolean)
     .flatMap((result) => [
       ...(Array.isArray(result.diagnostics) ? result.diagnostics : []),
-      ...(!result.ok ? [`${result.source}: ${clip(result.error, 320)}`] : []),
+      ...(!result.ok ? [`${result.source}: ${clip(result.error, S.runtime.sourceDiagnosticClipChars)}`] : []),
     ]);
 }
 
@@ -336,7 +335,7 @@ async function mcpPost(endpoint, body, headers, timeoutMs) {
       signal: timeout.signal,
     });
     const text = await response.text();
-    if (!response.ok) throw new Error(`HTTP ${response.status}: ${clip(text, 1000)}`);
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${clip(text, S.runtime.mcpErrorClipChars)}`);
     return { response, payload: parseMcpPayload(text) };
   } finally {
     timeout.clear();
@@ -476,7 +475,7 @@ async function recall(t, proj) {
     diagnostics: [
       primary.ok
         ? 'Hindsight recall returned no rows; SQLite compatibility fallback was used.'
-        : `Hindsight recall failed; SQLite compatibility fallback was used: ${clip(primary.error, 240)}`,
+        : `Hindsight recall failed; SQLite compatibility fallback was used: ${clip(primary.error, S.runtime.fallbackDiagnosticClipChars)}`,
       ...(fallback.diagnostics || []),
     ],
   };
@@ -544,6 +543,13 @@ async function selfTest() {
     memoryFallbackProvider: S.memory.fallbackProvider || 'none',
     hindsightEndpoint: S.memory.hindsight?.endpoint || '',
     projectCount: SHARED.projects.entries.length,
+    injectRuntime: S.runtime,
+    memoryRecall: {
+      max: S.memory.max,
+      snippetChars: S.memory.snippetChars,
+      minTerms: S.memory.minTerms,
+      candidatePool: S.memory.candidatePool,
+    },
     memoryScoring: S.memory.scoring,
     skillScoring: S.skills.scoring,
     outputBudgets: S.output.budgets,

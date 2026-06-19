@@ -24,6 +24,32 @@ import sys
 CONFIG_PATH = os.environ.get("HOOKS_CONFIG_PATH", "E:/hooks/config.json")
 IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+MEMORY_MUTATION_BASE_TOOLS = (
+    "memory_store",
+    "memory_update",
+    "memory_store_session",
+    "memory_observe",
+    "memory_harvest",
+    "memory_ingest",
+    "memory_resolve",
+    "memory_cleanup",
+    "memory_delete",
+    "mistake_note_add",
+)
+MEMORY_MUTATION_MCP_PREFIXES = (
+    "",
+    "mcp__mcp_router__",
+    "mcp__mcp-router__",
+    "mcp__memory-sqlite__",
+    "mcp__memory_sqlite__",
+)
+BUILTIN_TOOL_GROUPS: dict[str, dict[str, tuple[str, ...]]] = {
+    "memoryMutation": {
+        "tools": MEMORY_MUTATION_BASE_TOOLS,
+        "mcpPrefixes": MEMORY_MUTATION_MCP_PREFIXES,
+    },
+}
+
 # Exit codes: 0 = allow/ok, 2 = deny (PreToolUse gate). Telemetry/loop-safety are fail-open.
 EXIT_ALLOW = 0
 EXIT_DENY = 2
@@ -50,10 +76,30 @@ def hooks_db(config: dict) -> str:
     return config.get("shared", {}).get("paths", {}).get("hooksDb", "E:/hooks/_db/hooks.db")
 
 
-def matches_tool(hcfg: dict, tool_name: str) -> bool:
-    """Honor config.json hooks[].match.tools. '*' = all tools. Codex reports file
-    edits as tool_name 'apply_patch'; list it alongside Edit/Write for cross-runtime."""
-    tools = (hcfg.get("match") or {}).get("tools", ["*"])
+def expand_tool_group(group: dict) -> frozenset[str]:
+    tools = group.get("tools") or ()
+    prefixes = group.get("mcpPrefixes") or ("",)
+    return frozenset(f"{prefix}{tool}" for prefix in prefixes for tool in tools)
+
+
+def resolve_match_tools(hcfg: dict, config: dict | None = None) -> frozenset[str]:
+    """Resolve hooks[].match.tools or hooks[].match.toolGroup into concrete tool names."""
+    match = hcfg.get("match") or {}
+    explicit = match.get("tools")
+    if explicit:
+        return frozenset(explicit)
+    group_name = match.get("toolGroup")
+    if group_name:
+        shared_groups = (config or {}).get("shared", {}).get("toolGroups") or {}
+        group = shared_groups.get(group_name) or BUILTIN_TOOL_GROUPS.get(group_name)
+        if group:
+            return expand_tool_group(group)
+    return frozenset({"*"})
+
+
+def matches_tool(hcfg: dict, tool_name: str, config: dict | None = None) -> bool:
+    """Honor config.json hooks[].match.tools or match.toolGroup. '*' = all tools."""
+    tools = resolve_match_tools(hcfg, config)
     return "*" in tools or tool_name in tools
 
 
@@ -134,7 +180,7 @@ def run(hook_id: str, handler) -> None:
 
     payload = read_stdin_json()
     tool_name = payload.get("tool_name", "")
-    if tool_name and not matches_tool(hcfg, tool_name):
+    if tool_name and not matches_tool(hcfg, tool_name, config):
         sys.exit(EXIT_ALLOW)  # config.match.tools excludes this tool -> no-op
 
     try:

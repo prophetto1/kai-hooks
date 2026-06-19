@@ -10,6 +10,186 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-19 - Quality gate locks before preflight
+
+- Fixed: `quality-completion-gate` now acquires its per-repo single-flight lock
+  immediately after resolving the git root, instead of waiting until after git
+  status, manifest matching, and fraud preflight work.
+- Fixed: concurrent Stop hooks can no longer miss the first runner and rerun the
+  same manifest command set just because the first runner finished before the
+  second reached the late lock site.
+- Added: the core single-flight regression now creates a heavier dirty repo and
+  asserts the slow manifest command runs exactly once, not just that the second
+  gate returns quickly.
+
+### 2026-06-19 - Add long transcript harvester probe
+
+- Added: `memory-harvester/probe-long-transcript.py` builds a temporary
+  100-exchange transcript from local Codex session JSONL files and runs the
+  harvester against an isolated SQLite DB/state directory.
+- Safety: The probe does not write to the production memory DB, disables
+  Hindsight unless explicitly requested, and reports hashes/lengths instead of
+  raw past-session transcript text by default.
+- Changed: Probe output is compact by default and requires `--full-output` for
+  per-row hash details.
+
+### 2026-06-19 - Count harvester cadence from full transcript
+
+- Fixed: `memory-harvester` now counts exchange cadence from the full transcript
+  stream while still reviewing only the configured transcript tail, preventing
+  long sessions from making `exchangeCount` drop after the tail window rolls.
+- Added: Regression coverage for a long transcript with a tiny tail window so
+  the fourth and eighth exchanges both run on the intended cadence.
+
+### 2026-06-19 - Gate memory harvester cadence on exchange count
+
+- Fixed: `memory-harvester` now uses intuitive cadence names:
+  `reviewLastExchanges` is the scan window and `runAfterNewExchanges` is the
+  run cadence, so the Stop hook can fire after every assistant response while
+  extraction runs only every configured four exchanges.
+- Added: Harvester state now records `lastHarvestExchangeCount` and skips with
+  `harvest_interval_not_reached` until enough new assistant exchanges exist.
+- Removed: Ambiguous live config keys `maxExchanges` and
+  `harvestEveryExchanges`; validation now rejects them in favor of the
+  operator-readable names.
+- Added: Regression coverage for the first three exchanges skipping, the fourth
+  exchange harvesting, and the fifth exchange skipping again.
+- Changed: README/STACK docs now call out the Stop-vs-cadence split explicitly.
+
+### 2026-06-19 - Force all Hindsight LLM startup paths to Codex Spark
+
+- Fixed: `hindsight/ensure-hindsight.ps1` now forces both default and retain
+  Hindsight LLM env to the configured Codex Spark proxy, preventing stale
+  SOPS/OpenAI/Mistral env from surviving process restarts.
+- Added: Config-model validation now fails when
+  `memory-harvester.settings.hindsight.retainLlm` drifts from
+  `memory-harvester.settings.extraction.llm`.
+- Changed: Hindsight README now documents Codex Spark as the single local LLM
+  target for Hindsight startup and retain extraction.
+- Fixed: `memory-sync/purge-backfill-documents.py` now rescans after delete
+  passes and reports dry-run matches as `wouldDelete`, not fake deletions.
+- Removed: orphan retain-specific Codex proxy helper; Hindsight now uses the
+  canonical `ensureScript` from `config.json`.
+- Runtime cleanup: Force-restarted Hindsight onto Codex Spark, deleted the bad
+  TFO retain-test document, purged stale `sqlite-memory:*` Hindsight backfill
+  documents, and removed queued SQLite-backfill async retain operations while
+  leaving `E:/_memory/memory-sqlite.db` untouched.
+
+### 2026-06-19 - Hindsight sync uses strategy=exact (no second LLM on copy)
+
+- Changed: harvester → Hindsight and SQLite backfill pass `strategy: exact` so Postgres
+  gets the same memory text Spark already wrote to SQLite — retain LLM does not re-extract.
+
+### 2026-06-19 - Purge bad backfill; Hindsight retain LLM → Codex Spark
+
+- Added: `memory-sync/purge-backfill-documents.py` deletes `sqlite-memory:*` Hindsight documents.
+- Changed: `ensure-hindsight.ps1` retain LLM now uses Codex Spark via `http://127.0.0.1:8787/v1`
+  (same contract as harvester), not Mistral.
+- Changed: `memory-harvester` hindsight sync stays disabled until verbatim backfill is ready.
+
+### 2026-06-19 - Revert Hindsight-primary recall; SQLite primary again
+
+- Changed: Restored `inject-protocol` memory `provider: sqlite` with fallback off.
+  Hindsight recall cutover stays deferred until backfill completes and is explicitly requested.
+
+### 2026-06-19 - Cover memory-sync utilities in hooks docs and verification
+
+- Changed: Added `memory-sync/` to the hooks runtime verify domain so Stop
+  classifies the new SQLite-to-Hindsight backfill utilities instead of blocking
+  them as unmatched files.
+- Changed: Root docs now describe `memory-sync/` as a manual migration utility,
+  including a safe dry-run command for local operators.
+
+### 2026-06-19 - Add hooks root docs package
+
+- Added: root `AGENTS.md`, `README.md`, `STACK.md`, and
+  `WORKER-ACCESS.example.md` so `hooks` now has the same repo-entry docs package
+  used in the other local repos.
+- Changed: `.gitignore` now ignores local `WORKER-ACCESS.md` notes.
+- Changed: `quality-completion-gate/quality-verify-manifest.json` now classifies
+  the new root docs under the hooks runtime verify domain so Stop does not block
+  them as unmatched paths.
+
+### 2026-06-19 - Cover hooks brief artifacts in verification manifest
+
+- Fixed: Added `_briefs/` to the hooks runtime verify domain so Stop-gate
+  planning and implementation brief artifacts are classified instead of
+  blocking completion as unmatched files.
+
+### 2026-06-19 - Auto-sync memory-harvester stores to Hindsight
+
+- Added: `memory-harvester/harvest_hindsight.py` calls Hindsight MCP `retain`
+  (async, default) after new SQLite harvest rows are stored on Stop.
+- Changed: `memory-harvester` settings now include `hindsight.enabled` (default
+  on) with `document_id=sqlite-memory:{content_hash}` for cross-store linkage.
+- Note: Hindsight retain failures are fail-open; SQLite harvest still completes.
+
+### 2026-06-19 - Repo-root changelog protocol
+
+- Changed: Updated the injected per-prompt protocol to point changelog updates
+  at repo-root files (`changelog-hooks.md` / `CHANGELOG.md`) instead of the
+  Planned store.
+
+### 2026-06-19 - Cover harvester/proxy files in hooks verification manifest
+
+- Fixed: Added `codex-proxy/` and `memory-harvester/` to the hooks runtime
+  verify domain so the quality completion gate classifies the new Stop-time
+  memory capture files instead of blocking them as unmatched paths.
+
+### 2026-06-19 - Codex proxy logon task for Spark harvester
+
+- Added: `codex-proxy/ensure-codex-proxy.ps1`, `verify-codex-proxy.ps1`, and
+  `install-startup-task.ps1` to keep `127.0.0.1:8787` available for
+  `memory-harvester` LLM extraction (`gpt-5.3-codex-spark`).
+- Added: `JWC-Codex-Proxy-8787` logon task and harvester `autoEnsureProxy` for on-demand recovery.
+- Removed: `JWC-Codex-Proxy-8787-Watchdog` (5-minute polling flashed a console; replaced by silent logon + Stop-time ensure).
+
+### 2026-06-19 - memory-normalizer toolGroup shrinks config.json
+
+- Changed: `memory-normalizer` uses `match.toolGroup: memoryMutation` instead of
+  duplicating 50 tool names in `match.tools` and `settings.sourceTools`.
+- Added: `_core/hook_runtime.py` expands built-in tool groups for match filtering.
+
+
+- Changed: `memory-harvester` default extraction is `settings.extraction.mode=llm`
+  using `settings.extraction.llm` (model, proxy baseUrl, prompts, timeouts) — all
+  tunables live in `config.json`, not hidden in code.
+- Added: `memory-harvester/harvest_llm.py` OpenAI-compatible client for local Codex
+  subscription proxy (`gpt-5.3-codex-spark` by default).
+- Added: heuristic fallback via `settings.extraction.fallbackMode=heuristic` when
+  the proxy is unavailable; readonly LLM parse/prompt tests.
+
+### 2026-06-19 - Stop memory harvester for SQLite capture
+
+- Added: `memory-harvester/harvest-stop.py` Stop hook scans recent transcript
+  exchanges for durable facts and writes new rows into
+  `E:/_memory/memory-sqlite.db` with FTS indexing.
+- Added: deterministic harvest heuristics, per-session idempotency under
+  `.state/memory-harvester`, and readonly fixture tests.
+- Changed: `stop-completion-chain` now runs `memory-harvester` as a fail-open
+  pre-step before blocking completion gates.
+
+### 2026-06-19 - SQLite-primary memory recall until Hindsight backfill
+
+- Changed: `inject-protocol` memory provider is `sqlite` again so prompt recall
+  uses `E:/_memory/memory-sqlite.db`, which still holds the live memory corpus.
+- Changed: Hindsight fallback is disabled (`fallbackProvider: none`) until
+  Hindsight is backfilled from the vector/SQLite store and can become primary.
+- Changed: per-prompt protocol section A now documents vector/SQLite as the
+  active recall and retain path during the migration gap.
+
+### 2026-06-19 - Hindsight Mistral retain LLM
+
+- Changed: SOPS-backed Hindsight startup now maps `MISTRAL_API_KEY` into the
+  retain-only LLM path without printing key material.
+- Changed: Hindsight retain defaults now use `litellm` with
+  `mistral/mistral-small-latest`, retain concurrency capped to one, and retain
+  batch mode disabled for local/free-tier operation.
+- Added: `ensure-hindsight.ps1 -ForceRestart` so config changes can be applied
+  to the running native Hindsight process.
+- Added: `verify-hindsight.ps1 -RetainSmoke` to prove the live `sync_retain`
+  path, not just MCP tool availability.
+
 ### 2026-06-19 - Hindsight-primary inject-protocol memory provider
 
 - Changed: `inject-protocol` now treats Hindsight as the primary memory recall

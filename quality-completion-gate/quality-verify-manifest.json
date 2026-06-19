@@ -259,12 +259,17 @@
             {
               "prefixes": [
                 "_db/",
+                "_briefs/",
+                "codex-proxy/",
                 "docs/",
+                "hindsight/",
                 "hook-telemetry/",
                 "inject-protocol/",
                 "_core/",
                 "lib/",
                 "loop-safety/",
+                "memory-harvester/",
+                "memory-sync/",
                 "memory-normalizer/",
                 "quality-completion-gate/",
                 "agent-diff-completion-gate/",
@@ -280,7 +285,12 @@
             },
             {
               "fileNames": [
+                "AGENTS.md",
+                "README.md",
+                "STACK.md",
+                "WORKER-ACCESS.example.md",
                 ".gitignore",
+                "LICENSE",
                 "claude-proposal.md",
                 "codex-proposal.md",
                 "config.json",
@@ -296,7 +306,7 @@
             { "label": "hooks quality gate core tests", "command": "node quality-completion-gate/test-quality-gate-core.mjs", "timeoutMs": 30000 },
             { "label": "hooks inject protocol core tests", "command": "node inject-protocol/test-inject-protocol-core.mjs", "timeoutMs": 30000 },
             { "label": "hooks memory runtime smoke", "command": "python memory-normalizer/test-memory-runtime.py", "timeoutMs": 30000 },
-            { "label": "hooks read-only sqlite tests", "command": "python _core/test-hook-runtime.py && python inject-protocol/test-recall-readonly.py && python inject-protocol/test-suggest-readonly.py && python memory-normalizer/test-normalize-memory-tags-readonly.py && python memory-normalizer/test-maintain-readonly.py", "timeoutMs": 30000 },
+            { "label": "hooks read-only sqlite tests", "command": "python _core/test-hook-runtime.py && python inject-protocol/test-recall-readonly.py && python inject-protocol/test-suggest-readonly.py && python memory-normalizer/test-normalize-memory-tags-readonly.py && python memory-normalizer/test-maintain-readonly.py && python memory-harvester/test-harvest-readonly.py && python memory-harvester/test-harvest-hindsight-readonly.py && python memory-harvester/test-harvest-llm-readonly.py", "timeoutMs": 30000 },
             { "label": "hooks memory normalizer self-test", "command": "python memory-normalizer/normalize-after-store.py --self-test", "timeoutMs": 30000 },
             { "label": "hooks task mode core tests", "command": "node task-mode/test-task-mode-core.mjs", "timeoutMs": 30000 },
             { "label": "hooks task mode gate self-test", "command": "node task-mode/task-mode-gate.mjs --self-test", "timeoutMs": 30000 },
@@ -304,7 +314,8 @@
             { "label": "hooks index-skills tests", "command": "python inject-protocol/test-index-skills.py", "timeoutMs": 30000 },
             { "label": "hooks telemetry log-event tests", "command": "python hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
             { "label": "hooks agent diff completion gate tests", "command": "node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs", "timeoutMs": 30000 },
-            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
+            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py memory-harvester/harvest_core.py memory-harvester/harvest_hindsight.py memory-harvester/harvest_llm.py memory-harvester/harvest-stop.py memory-harvester/test-harvest-readonly.py memory-harvester/test-harvest-hindsight-readonly.py memory-harvester/test-harvest-llm-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
+            { "label": "hooks hindsight powershell syntax", "command": "powershell -NoProfile -EncodedCommand JABmAGkAbABlAHMAIAA9ACAAQAAoACcAaABpAG4AZABzAGkAZwBoAHQALwBlAG4AcwB1AHIAZQAtAGgAaQBuAGQAcwBpAGcAaAB0AC4AcABzADEAJwAsACAAJwBoAGkAbgBkAHMAaQBnAGgAdAAvAGkAbgBzAHQAYQBsAGwALQBzAHQAYQByAHQAdQBwAC0AdABhAHMAawAuAHAAcwAxACcALAAgACcAaABpAG4AZABzAGkAZwBoAHQALwB2AGUAcgBpAGYAeQAtAGgAaQBuAGQAcwBpAGcAaAB0AC4AcABzADEAJwApAAoAZgBvAHIAZQBhAGMAaAAgACgAJABmAGkAbABlACAAaQBuACAAJABmAGkAbABlAHMAKQAgAHsAIAAkAG4AdQBsAGwAIAA9ACAAWwBzAGMAcgBpAHAAdABiAGwAbwBjAGsAXQA6ADoAQwByAGUAYQB0AGUAKAAoAEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABmAGkAbABlACAALQBSAGEAdwApACkAIAB9AA==", "timeoutMs": 30000 },
             { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check stop-completion-chain/stop-completion-chain.mjs", "timeoutMs": 30000 }
           ]
         }

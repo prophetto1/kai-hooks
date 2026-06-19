@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -328,11 +328,21 @@ async function testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwi
     const configPath = join(root, 'config.json');
     const stateDir = join(root, 'state');
     const markerPath = join(root, 'slow-command-started.txt').replaceAll('\\', '/');
-    write(repo, 'quality-completion-gate/slow.mjs', 'dirty');
+    const runCountPath = join(root, 'slow-command-run-count.txt').replaceAll('\\', '/');
+    for (let index = 0; index < 1200; index += 1) {
+      write(repo, `quality-completion-gate/bulk-${index}.mjs`, `dirty ${index}`);
+    }
     writeJson(manifestPath, manifestFor(repo, [
       {
         label: 'slow pass',
-        command: `node -e "require('fs').writeFileSync('${markerPath}', 'started'); setTimeout(() => {}, 750)"`,
+        command:
+          `node -e "const fs=require('fs');` +
+          `const marker='${markerPath}';` +
+          `const countPath='${runCountPath}';` +
+          `const next=String((Number(fs.existsSync(countPath)?fs.readFileSync(countPath,'utf8'):0)||0)+1);` +
+          `fs.writeFileSync(countPath,next);` +
+          `fs.writeFileSync(marker,'started');` +
+          `setTimeout(() => {}, 250)"`,
         timeoutMs: 5000
       }
     ]));
@@ -355,6 +365,7 @@ async function testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwi
     const firstResult = await waitForStopGate(first);
     assert.equal(firstResult.status, 0, firstResult.stderr || firstResult.stdout);
     assert.deepEqual(JSON.parse(firstResult.stdout), { continue: true });
+    assert.equal(readFileSync(runCountPath, 'utf8'), '1', 'single-flight must prevent duplicate manifest command runs');
 
     rmSync(root, { recursive: true, force: true });
   });

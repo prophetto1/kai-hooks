@@ -18,6 +18,10 @@ const DEFAULT_CHAIN = [
   { id: 'agent-diff-completion-gate', script: 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', runtime: 'node' },
 ];
 
+const PRE_CHAIN = [
+  { id: 'memory-harvester', script: 'memory-harvester/harvest-stop.py', runtime: 'python' },
+];
+
 function readStdin() {
   try {
     const raw = readFileSync(0, 'utf8').replace(/^\uFEFF/, '').trim();
@@ -37,6 +41,17 @@ function loadConfig() {
   } catch {
     return { hooks: [] };
   }
+}
+
+function enabledPreChain(config) {
+  const byId = new Map((config.hooks || []).filter((hook) => hook && hook.id).map((hook) => [hook.id, hook]));
+  return PRE_CHAIN.filter((step) => {
+    const hook = byId.get(step.id);
+    return hook ? hook.enabled !== false : false;
+  }).map((step) => {
+    const hook = byId.get(step.id);
+    return hook?.script?.path ? { ...step, script: hook.script.path } : step;
+  });
 }
 
 function enabledChain(config) {
@@ -122,10 +137,29 @@ function runStep(step, input, timeoutMs) {
   }
 }
 
+function runPreChain(input, config, timeoutMs) {
+  const preChain = enabledPreChain(config);
+  const messages = [];
+  for (const step of preChain) {
+    const result = runStep(step, input, timeoutMs);
+    if (result.parsed?.systemMessage) messages.push(result.parsed.systemMessage);
+    if (!result.ok) {
+      messages.push(`memory-harvester pre-step failed open: ${result.reason}`);
+    }
+  }
+  return messages;
+}
+
 function evaluate(input) {
   const config = loadConfig();
+  const preMessages = runPreChain(input, config, positiveInteger(stopChainSettings(config).stepTimeoutMs)
+    ? stopChainSettings(config).stepTimeoutMs
+    : DEFAULT_STEP_TIMEOUT_MS);
   const chain = enabledChain(config);
-  if (!chain.length) return { continue: true };
+  if (!chain.length) {
+    if (preMessages.length) return { continue: true, systemMessage: preMessages.join('\n\n') };
+    return { continue: true };
+  }
   const settings = stopChainSettings(config);
   const stepTimeoutMs = positiveInteger(settings.stepTimeoutMs)
     ? settings.stepTimeoutMs
@@ -147,7 +181,10 @@ function evaluate(input) {
   }
 
   if (messages.length) {
-    return { continue: true, systemMessage: messages.join('\n\n') };
+    return { continue: true, systemMessage: [...preMessages, ...messages].filter(Boolean).join('\n\n') };
+  }
+  if (preMessages.length) {
+    return { continue: true, systemMessage: preMessages.join('\n\n') };
   }
   return { continue: true };
 }

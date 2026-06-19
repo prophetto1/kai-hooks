@@ -260,13 +260,14 @@ function tryCreateLock(path, owner) {
   }
 }
 
-function acquireSingleFlight(activeRuntime, input, repoRoot, domainNames, totalBudgetMs) {
+function acquireSingleFlight(activeRuntime, input, repoRoot, domainNames = [], totalBudgetMs) {
   const path = lockPath(activeRuntime, repoRoot);
+  const sortedDomainNames = Array.isArray(domainNames) ? [...domainNames].sort() : [];
   const owner = {
     token: lockToken(),
     pid: process.pid,
     repoRoot,
-    domains: [...domainNames].sort(),
+    domains: sortedDomainNames,
     cwd: input.cwd || process.cwd(),
     sessionId: input.session_id || input.sessionId || '',
     startedAt: new Date().toISOString()
@@ -340,114 +341,10 @@ function evaluate(input) {
     );
   }
   const repoRoot = rootResult.value;
-
-  const filesResult = changedFiles(repoRoot, runtime.shared.runtime.gitTimeoutMs);
-  if (!filesResult.ok) {
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      `Quality completion gate could not inspect git status for ${repoRoot}: ${filesResult.error}`,
-      { kind: 'git-status', error: filesResult.error },
-      []
-    );
-  }
-  const files = filesResult.value;
-  if (!files.length) {
-    clearState(runtime, input, repoRoot);
-    return { continue: true };
-  }
-
-  if (!manifest.data) {
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      `Quality completion gate could not find a verify manifest. Expected ${manifest.path}.`,
-      { kind: 'missing-manifest', path: manifest.path },
-      []
-    );
-  }
-
-  const repoEntry = repoEntryForRoot(manifest.data, repoRoot);
-  if (!repoEntry) {
-    if (referenceChildRepoForCwd(manifest.data, cwd, repoRoot)) {
-      clearState(runtime, input, repoRoot);
-      return { continue: true };
-    }
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      `Quality completion gate has no repo entry for ${repoRoot} in ${manifest.path}.`,
-      { kind: 'missing-repo-entry', manifestPath: manifest.path },
-      []
-    );
-  }
-
-  const { touched, unmatched } = touchedDomains(repoEntry, files);
-  if (unmatched.length && repoEntry.blockOnUnmatched !== false) {
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      `Quality completion gate found changed files with no declared verify domain in ${manifest.path}: ` +
-        unmatched.slice(0, 12).join(', '),
-      { kind: 'unmatched-files', unmatched: unmatched.slice(0, 50), manifestPath: manifest.path },
-      []
-    );
-  }
-
-  const domainNames = [...touched.keys()];
-  if (!domainNames.length) {
-    clearState(runtime, input, repoRoot);
-    return { continue: true };
-  }
-
-  const commands = commandsForDomains(repoEntry, domainNames);
-  if (!commands.length) {
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      `Quality completion gate found touched domains without commands: ${domainNames.join(', ')}.`,
-      { kind: 'missing-domain-commands', domainNames },
-      domainNames
-    );
-  }
-
-  for (const command of commands) {
-    if (isFraudulentVerificationCommand(command.command)) {
-      return block(
-        runtime,
-        input,
-        repoRoot,
-        verificationFraudBlock(`Manifest declares a mocked verification command: ${command.command}`),
-        { kind: 'verification-fraud', command: command.command },
-        domainNames,
-      );
-    }
-  }
-
-  const sessionId = input.session_id || input.sessionId || '';
-  const hooksDb = runtime.shared?.paths?.hooksDb || 'E:/hooks/_db/hooks.db';
-  const telemetryFraud = detectFraudulentVerificationInTelemetry(hooksDb, sessionId, 0);
-  if (telemetryFraud.fraudulent) {
-    const detail = telemetryFraud.matches
-      .map((match) => `- ${match.detail || match.target || match.tool_name}`)
-      .join('\n');
-    return block(
-      runtime,
-      input,
-      repoRoot,
-      verificationFraudBlock(`Telemetry recorded mocked verification command(s) this session:\n${detail}`, 1),
-      { kind: 'verification-fraud-telemetry', matches: telemetryFraud.matches },
-      domainNames,
-    );
-  }
-
   const totalBudgetMs = positiveInteger(runtime.settings.totalBudgetMs, DEFAULT_TOTAL_BUDGET_MS);
-  const lock = acquireSingleFlight(runtime, input, repoRoot, domainNames, totalBudgetMs);
+  // Lock as soon as the repo root is known so concurrent Stop hooks do not race
+  // through preflight work and rerun the same manifest command set.
+  const lock = acquireSingleFlight(runtime, input, repoRoot, [], totalBudgetMs);
   if (!lock.ok) {
     if (lock.alreadyRunning) {
       runtime.debug(lock.reason);
@@ -457,6 +354,111 @@ function evaluate(input) {
   }
 
   try {
+    const filesResult = changedFiles(repoRoot, runtime.shared.runtime.gitTimeoutMs);
+    if (!filesResult.ok) {
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        `Quality completion gate could not inspect git status for ${repoRoot}: ${filesResult.error}`,
+        { kind: 'git-status', error: filesResult.error },
+        []
+      );
+    }
+    const files = filesResult.value;
+    if (!files.length) {
+      clearState(runtime, input, repoRoot);
+      return { continue: true };
+    }
+
+    if (!manifest.data) {
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        `Quality completion gate could not find a verify manifest. Expected ${manifest.path}.`,
+        { kind: 'missing-manifest', path: manifest.path },
+        []
+      );
+    }
+
+    const repoEntry = repoEntryForRoot(manifest.data, repoRoot);
+    if (!repoEntry) {
+      if (referenceChildRepoForCwd(manifest.data, cwd, repoRoot)) {
+        clearState(runtime, input, repoRoot);
+        return { continue: true };
+      }
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        `Quality completion gate has no repo entry for ${repoRoot} in ${manifest.path}.`,
+        { kind: 'missing-repo-entry', manifestPath: manifest.path },
+        []
+      );
+    }
+
+    const { touched, unmatched } = touchedDomains(repoEntry, files);
+    if (unmatched.length && repoEntry.blockOnUnmatched !== false) {
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        `Quality completion gate found changed files with no declared verify domain in ${manifest.path}: ` +
+          unmatched.slice(0, 12).join(', '),
+        { kind: 'unmatched-files', unmatched: unmatched.slice(0, 50), manifestPath: manifest.path },
+        []
+      );
+    }
+
+    const domainNames = [...touched.keys()];
+    if (!domainNames.length) {
+      clearState(runtime, input, repoRoot);
+      return { continue: true };
+    }
+
+    const commands = commandsForDomains(repoEntry, domainNames);
+    if (!commands.length) {
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        `Quality completion gate found touched domains without commands: ${domainNames.join(', ')}.`,
+        { kind: 'missing-domain-commands', domainNames },
+        domainNames
+      );
+    }
+
+    for (const command of commands) {
+      if (isFraudulentVerificationCommand(command.command)) {
+        return block(
+          runtime,
+          input,
+          repoRoot,
+          verificationFraudBlock(`Manifest declares a mocked verification command: ${command.command}`),
+          { kind: 'verification-fraud', command: command.command },
+          domainNames,
+        );
+      }
+    }
+
+    const sessionId = input.session_id || input.sessionId || '';
+    const hooksDb = runtime.shared?.paths?.hooksDb || 'E:/hooks/_db/hooks.db';
+    const telemetryFraud = detectFraudulentVerificationInTelemetry(hooksDb, sessionId, 0);
+    if (telemetryFraud.fraudulent) {
+      const detail = telemetryFraud.matches
+        .map((match) => `- ${match.detail || match.target || match.tool_name}`)
+        .join('\n');
+      return block(
+        runtime,
+        input,
+        repoRoot,
+        verificationFraudBlock(`Telemetry recorded mocked verification command(s) this session:\n${detail}`, 1),
+        { kind: 'verification-fraud-telemetry', matches: telemetryFraud.matches },
+        domainNames,
+      );
+    }
+
     const results = [];
     for (const command of commands) {
       const remaining = remainingBudget(runtime, startedAt);

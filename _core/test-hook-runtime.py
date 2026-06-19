@@ -50,9 +50,33 @@ def test_connect_readonly_does_not_create_missing_db() -> None:
         assert_true(not os.path.exists(missing_path), "missing database should not be created")
 
 
+def test_resolve_match_tools_expands_memory_mutation_group() -> None:
+    config = {"shared": {}}
+    hcfg = {"match": {"toolGroup": "memoryMutation"}}
+    tools = hook_runtime.resolve_match_tools(hcfg, config)
+    assert_true("memory_store" in tools, "bare memory_store should match")
+    assert_true("mcp__mcp-router__memory_update" in tools, "MCP-prefixed memory_update should match")
+    assert_true(len(tools) == 50, f"memoryMutation should expand to 50 tools, got {len(tools)}")
+
+
+def test_matches_tool_honors_tool_group() -> None:
+    config = {"shared": {}}
+    hcfg = {"match": {"toolGroup": "memoryMutation"}}
+    assert_true(
+        hook_runtime.matches_tool(hcfg, "mcp__memory_sqlite__memory_store", config),
+        "toolGroup match should allow configured MCP memory tools",
+    )
+    assert_true(
+        not hook_runtime.matches_tool(hcfg, "Bash", config),
+        "toolGroup match should exclude unrelated tools",
+    )
+
+
 def main() -> int:
     test_connect_readonly_reads_existing_db()
     test_connect_readonly_does_not_create_missing_db()
+    test_resolve_match_tools_expands_memory_mutation_group()
+    test_matches_tool_honors_tool_group()
     print("hook runtime tests passed")
     return 0
 

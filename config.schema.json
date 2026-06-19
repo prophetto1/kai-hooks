@@ -410,6 +410,7 @@
       "type": "object",
       "required": [
         "terms",
+        "runtime",
         "sources",
         "output"
       ],
@@ -442,6 +443,41 @@
                 "gu"
               ]
             }
+          },
+          "additionalProperties": false
+        },
+        "runtime": {
+          "type": "object",
+          "required": [
+            "pythonMaxBufferBytes",
+            "transcriptTailBytes",
+            "diagnosticClipChars",
+            "sourceDiagnosticClipChars",
+            "mcpErrorClipChars",
+            "fallbackDiagnosticClipChars"
+          ],
+          "properties": {
+            "pythonMaxBufferBytes": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "transcriptTailBytes": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "diagnosticClipChars": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "sourceDiagnosticClipChars": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "mcpErrorClipChars": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "fallbackDiagnosticClipChars": {
+              "$ref": "#/$defs/positiveInteger"
+            }
+          },
+          "patternProperties": {
+            "^_": true
           },
           "additionalProperties": false
         },

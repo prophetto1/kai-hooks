@@ -42,7 +42,28 @@ powershell -NoProfile -ExecutionPolicy Bypass -File E:\hooks\hindsight\verify-hi
 E:\writing-system\secrets\dev\llm-providers.yaml
 ```
 
-The script maps `OPENAI_API_KEY` to `HINDSIGHT_API_LLM_API_KEY` only inside the child process environment. It does not print the value.
+The script does not print secret values. In this local hooks setup, Hindsight's
+default LLM and retain LLM are both forced to the same **Codex Spark** proxy as
+`memory-harvester` (`http://127.0.0.1:8787/v1`, model
+`gpt-5.3-codex-spark`, reasoning effort `medium`).
+
+- Config source: `hooks[id=memory-harvester].settings.hindsight.retainLlm` in
+  `config.json`.
+- `ensure-hindsight.ps1` ensures the Codex proxy is up before starting Hindsight.
+- Stale SOPS/OpenAI/Mistral Hindsight LLM env is overwritten at process start.
+- Mistral is not used for retain in this local hooks setup.
+
+After changing SOPS LLM settings, restart the service:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File E:\hooks\hindsight\ensure-hindsight.ps1 -ForceRestart
+```
+
+To verify the retain LLM path, run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File E:\hooks\hindsight\verify-hindsight.ps1 -RetainSmoke
+```
 
 ## Logs
 

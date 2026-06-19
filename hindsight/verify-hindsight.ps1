@@ -2,7 +2,8 @@ param(
     [int]$Port = 10003,
     [string]$HostAddress = "127.0.0.1",
     [string]$BankId = "collective",
-    [int]$TimeoutSec = 30
+    [int]$TimeoutSec = 30,
+    [switch]$RetainSmoke
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,6 +56,49 @@ $parsed = $content | ConvertFrom-Json
 $toolNames = @($parsed.result.tools | ForEach-Object { $_.name })
 $requiredTools = @("recall", "list_memories", "reflect", "sync_retain")
 $missing = @($requiredTools | Where-Object { $toolNames -notcontains $_ })
+$retainSmokeOk = $null
+$retainSmokeError = $null
+
+if ($RetainSmoke) {
+    $stamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssK"
+    $smokeBody = @{
+        jsonrpc = "2.0"
+        id = 3
+        method = "tools/call"
+        params = @{
+            name = "sync_retain"
+            arguments = @{
+                content = "Hindsight retain smoke check at $stamp. The retain LLM must extract this diagnostic fact for bank $BankId."
+                context = "diagnostic"
+                tags = @("hindsight-retain-smoke", "hooks")
+                metadata = @{
+                    source = "E:/hooks/hindsight/verify-hindsight.ps1"
+                    bank = $BankId
+                }
+            }
+        }
+    } | ConvertTo-Json -Depth 10
+
+    try {
+        $smokeResponse = Invoke-WebRequest -UseBasicParsing -Uri $uri -Method Post -Headers $headers -ContentType "application/json" -Body $smokeBody -TimeoutSec ([Math]::Max($TimeoutSec, 180))
+        $smokeContent = $smokeResponse.Content
+        if ($smokeContent -match "^event:") {
+            $jsonLine = ($smokeContent -split "`n" | Where-Object { $_ -like "data: *" } | Select-Object -First 1)
+            if (-not $jsonLine) {
+                throw "sync_retain returned SSE without data"
+            }
+            $smokeContent = $jsonLine.Substring(6)
+        }
+        $smokeParsed = $smokeContent | ConvertFrom-Json
+        $retainSmokeOk = -not [bool]$smokeParsed.result.isError
+        if (-not $retainSmokeOk) {
+            $retainSmokeError = ($smokeParsed.result.content | ForEach-Object { $_.text }) -join " "
+        }
+    } catch {
+        $retainSmokeOk = $false
+        $retainSmokeError = $_.Exception.Message
+    }
+}
 
 [pscustomobject]@{
     Endpoint = $uri
@@ -64,9 +108,15 @@ $missing = @($requiredTools | Where-Object { $toolNames -notcontains $_ })
     ToolCount = $toolNames.Count
     RequiredToolsPresent = ($missing.Count -eq 0)
     Missing = $missing -join ","
+    RetainSmokeRequested = [bool]$RetainSmoke
+    RetainSmokeOk = $retainSmokeOk
+    RetainSmokeError = $retainSmokeError
     SampleTools = ($toolNames | Select-Object -First 12) -join ", "
 } | Format-List
 
 if ($missing.Count -gt 0) {
+    exit 1
+}
+if ($RetainSmoke -and -not $retainSmokeOk) {
     exit 1
 }

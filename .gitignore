@@ -16,6 +16,9 @@ _references/
 __pycache__/
 *.py[cod]
 
+# Local access notes
+WORKER-ACCESS.md
+
 # OS cruft
 .DS_Store
 Thumbs.db

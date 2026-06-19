@@ -66,5 +66,9 @@ test('active injector is wired to shared core helpers', () => {
   assert.match(source, /from '\.\/inject-core\.mjs'/);
   assert.match(source, /projectFromCwd\(cwd,\s*SHARED\.projects\.entries\)/);
   assert.match(source, /composeOutput\(\s*rules,\s*skillResult\.rows,\s*memoryResult\.rows,\s*labels,\s*S\.output\.capChars,\s*S\.output\.budgets,\s*diagnostics\s*\)/);
+  assert.match(source, /maxBuffer:\s*S\.runtime\.pythonMaxBufferBytes/);
+  assert.match(source, /readTextTail\(transcriptPath,\s*S\.runtime\.transcriptTailBytes\)/);
+  assert.doesNotMatch(source, /PY_MAX_BUFFER/);
+  assert.doesNotMatch(source, /TRANSCRIPT_TAIL_BYTES/);
   assert.doesNotMatch(source, /c\.includes\('\/' \+ token\)/);
 });

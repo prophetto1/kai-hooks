@@ -104,13 +104,50 @@ assert.ok(
   'memory-normalizer must reject content mutation settings'
 );
 
-const badMemoryNormalizerSourceTools = structuredClone(config);
-const memoryNormalizerWithDrift = hookById(badMemoryNormalizerSourceTools, 'memory-normalizer');
-memoryNormalizerWithDrift.settings.sourceTools = memoryNormalizerWithDrift.settings.sourceTools.filter((tool) => tool !== 'memory_update');
-const badMemoryNormalizerSourceToolsResult = validateConfig(badMemoryNormalizerSourceTools);
+const badMemoryNormalizerToolGroup = structuredClone(config);
+hookById(badMemoryNormalizerToolGroup, 'memory-normalizer').match.toolGroup = 'unknownGroup';
+const badMemoryNormalizerToolGroupResult = validateConfig(badMemoryNormalizerToolGroup);
 assert.ok(
-  badMemoryNormalizerSourceToolsResult.errors.some((error) => error.includes('memory-normalizer match.tools must equal settings.sourceTools')),
-  'memory-normalizer must reject sourceTools drift from match.tools'
+  badMemoryNormalizerToolGroupResult.errors.some((error) => error.includes('memory-normalizer match.toolGroup invalid')),
+  'memory-normalizer must reject unknown toolGroup names'
+);
+
+const badHindsightRetainDrift = structuredClone(config);
+hookById(badHindsightRetainDrift, 'memory-harvester').settings.hindsight.retainLlm.model = 'mistral/mistral-small-latest';
+const badHindsightRetainDriftResult = validateConfig(badHindsightRetainDrift);
+assert.ok(
+  badHindsightRetainDriftResult.errors.some((error) =>
+    error.includes('memory-harvester settings.hindsight.retainLlm.model must match settings.extraction.llm.model')
+  ),
+  'Hindsight retain LLM must not drift from harvester LLM'
+);
+
+const badMemoryHarvesterCadence = structuredClone(config);
+hookById(badMemoryHarvesterCadence, 'memory-harvester').settings.runAfterNewExchanges =
+  hookById(badMemoryHarvesterCadence, 'memory-harvester').settings.reviewLastExchanges + 1;
+const badMemoryHarvesterCadenceResult = validateConfig(badMemoryHarvesterCadence);
+assert.ok(
+  badMemoryHarvesterCadenceResult.errors.some((error) =>
+    error.includes('memory-harvester settings.runAfterNewExchanges must be <= settings.reviewLastExchanges')
+  ),
+  'memory-harvester cadence must fit inside the exchange scan window'
+);
+
+const badMemoryHarvesterOldNames = structuredClone(config);
+hookById(badMemoryHarvesterOldNames, 'memory-harvester').settings.maxExchanges = 4;
+hookById(badMemoryHarvesterOldNames, 'memory-harvester').settings.harvestEveryExchanges = 4;
+const badMemoryHarvesterOldNamesResult = validateConfig(badMemoryHarvesterOldNames);
+assert.ok(
+  badMemoryHarvesterOldNamesResult.errors.some((error) =>
+    error.includes('memory-harvester settings.maxExchanges is deprecated; use reviewLastExchanges')
+  ),
+  'memory-harvester must reject old review-window setting name'
+);
+assert.ok(
+  badMemoryHarvesterOldNamesResult.errors.some((error) =>
+    error.includes('memory-harvester settings.harvestEveryExchanges is deprecated; use runAfterNewExchanges')
+  ),
+  'memory-harvester must reject old cadence setting name'
 );
 
 const badQualityAuthority = structuredClone(config);

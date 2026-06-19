@@ -18,6 +18,33 @@ const ADCG_TRIGGER_MODE_ENUM = ['files', 'loc', 'files-or-loc', 'files-and-loc']
 const MEMORY_PROVIDER_ENUM = ['hindsight', 'sqlite'];
 const MEMORY_FALLBACK_PROVIDER_ENUM = ['sqlite', 'none'];
 const HINDSIGHT_REQUIRED_TOOLS = ['recall', 'list_memories', 'reflect', 'sync_retain'];
+const MEMORY_MUTATION_BASE_TOOLS = Object.freeze([
+  'memory_store',
+  'memory_update',
+  'memory_store_session',
+  'memory_observe',
+  'memory_harvest',
+  'memory_ingest',
+  'memory_resolve',
+  'memory_cleanup',
+  'memory_delete',
+  'mistake_note_add',
+]);
+const MEMORY_MUTATION_MCP_PREFIXES = Object.freeze([
+  '',
+  'mcp__mcp_router__',
+  'mcp__mcp-router__',
+  'mcp__memory-sqlite__',
+  'mcp__memory_sqlite__',
+]);
+const BUILTIN_TOOL_GROUP_NAMES = Object.freeze(['memoryMutation']);
+
+function expandToolGroup(groupName) {
+  if (groupName !== 'memoryMutation') return [];
+  return MEMORY_MUTATION_MCP_PREFIXES.flatMap((prefix) =>
+    MEMORY_MUTATION_BASE_TOOLS.map((tool) => `${prefix}${tool}`),
+  );
+}
 
 export const TOKENIZER_CONFIG = Object.freeze({
   defaultCharClass: '\\p{L}\\p{N}_-',
@@ -159,7 +186,7 @@ function definitions() {
       },
     }),
     injectSettings: objectSchema({
-      required: ['terms', 'sources', 'output'],
+      required: ['terms', 'runtime', 'sources', 'output'],
       properties: {
         terms: objectSchema({
           required: ['minLen', 'max', 'contextPrompts', 'tokenCharClass', 'tokenRegexFlags'],
@@ -170,6 +197,25 @@ function definitions() {
             tokenCharClass: ref('nonEmptyString'),
             tokenRegexFlags: { enum: TOKENIZER_CONFIG.allowedFlags },
           },
+        }),
+        runtime: objectSchema({
+          required: [
+            'pythonMaxBufferBytes',
+            'transcriptTailBytes',
+            'diagnosticClipChars',
+            'sourceDiagnosticClipChars',
+            'mcpErrorClipChars',
+            'fallbackDiagnosticClipChars',
+          ],
+          properties: {
+            pythonMaxBufferBytes: ref('positiveInteger'),
+            transcriptTailBytes: ref('positiveInteger'),
+            diagnosticClipChars: ref('positiveInteger'),
+            sourceDiagnosticClipChars: ref('positiveInteger'),
+            mcpErrorClipChars: ref('positiveInteger'),
+            fallbackDiagnosticClipChars: ref('positiveInteger'),
+          },
+          ...noteFields(),
         }),
         sources: objectSchema({
           required: ['protocol', 'memory', 'skills'],
@@ -670,6 +716,12 @@ function validateInjectProtocol(config, errors) {
   pushIf(errors, typeof settings.terms?.tokenCharClass === 'string' && settings.terms.tokenCharClass.length > 0, 'inject-protocol terms.tokenCharClass invalid');
   pushIf(errors, TOKENIZER_CONFIG.allowedFlags.includes(settings.terms?.tokenRegexFlags), 'inject-protocol terms.tokenRegexFlags invalid');
   pushIf(errors, validTokenRegex(settings.terms), 'inject-protocol token regex invalid');
+  pushIf(errors, positiveInteger(settings.runtime?.pythonMaxBufferBytes), 'inject-protocol runtime.pythonMaxBufferBytes invalid');
+  pushIf(errors, positiveInteger(settings.runtime?.transcriptTailBytes), 'inject-protocol runtime.transcriptTailBytes invalid');
+  pushIf(errors, positiveInteger(settings.runtime?.diagnosticClipChars), 'inject-protocol runtime.diagnosticClipChars invalid');
+  pushIf(errors, positiveInteger(settings.runtime?.sourceDiagnosticClipChars), 'inject-protocol runtime.sourceDiagnosticClipChars invalid');
+  pushIf(errors, positiveInteger(settings.runtime?.mcpErrorClipChars), 'inject-protocol runtime.mcpErrorClipChars invalid');
+  pushIf(errors, positiveInteger(settings.runtime?.fallbackDiagnosticClipChars), 'inject-protocol runtime.fallbackDiagnosticClipChars invalid');
   pushIf(errors, positiveInteger(settings.output?.capChars), 'inject-protocol output.capChars invalid');
   pushIf(errors, positiveInteger(settings.output?.budgets?.protocolChars), 'inject-protocol output.budgets.protocolChars invalid');
   pushIf(errors, positiveInteger(settings.output?.budgets?.diagnosticsChars), 'inject-protocol output.budgets.diagnosticsChars invalid');
@@ -752,23 +804,21 @@ function validateMemoryNormalizer(config, errors) {
   pushIf(errors, hook.script?.path === 'memory-normalizer/normalize-after-store.py', 'memory-normalizer.script.path mismatch');
   const s = hook.settings || {};
   pushIf(errors, identifier(s.table), 'memory-normalizer settings.table must be a SQL identifier');
-  pushIf(errors, identifier(s.auditTable), 'memory-normalizer settings.auditTable must be a SQL identifier');
-  pushIf(errors, positiveInteger(s.detailMaxChars), 'memory-normalizer settings.detailMaxChars invalid');
-  const matchTools = hook.match?.tools;
-  const matchToolsValid = nonEmptyStringArray(matchTools);
-  const sourceToolsValid = nonEmptyStringArray(s.sourceTools);
-  pushIf(errors, matchToolsValid, 'memory-normalizer match.tools must be a non-empty string array');
-  pushIf(errors, sourceToolsValid, 'memory-normalizer settings.sourceTools must be a non-empty string array');
-  if (matchToolsValid && sourceToolsValid) {
-    const sortedUnique = (items) => [...new Set(items.map((item) => String(item)))].sort();
-    const matchToolSet = sortedUnique(matchTools);
-    const sourceToolSet = sortedUnique(s.sourceTools);
-    pushIf(
-      errors,
-      matchToolSet.length === sourceToolSet.length && matchToolSet.every((tool, index) => tool === sourceToolSet[index]),
-      'memory-normalizer match.tools must equal settings.sourceTools'
-    );
+  if (s.auditTable !== undefined) {
+    pushIf(errors, identifier(s.auditTable), 'memory-normalizer settings.auditTable must be a SQL identifier');
   }
+  pushIf(errors, positiveInteger(s.detailMaxChars), 'memory-normalizer settings.detailMaxChars invalid');
+  const match = hook.match || {};
+  const toolGroup = match.toolGroup;
+  const matchTools = match.tools;
+  const hasToolGroup = typeof toolGroup === 'string' && toolGroup.length > 0;
+  const matchToolsValid = nonEmptyStringArray(matchTools);
+  pushIf(errors, hasToolGroup || matchToolsValid, 'memory-normalizer match.toolGroup or match.tools required');
+  if (hasToolGroup) {
+    pushIf(errors, BUILTIN_TOOL_GROUP_NAMES.includes(toolGroup), 'memory-normalizer match.toolGroup invalid');
+    pushIf(errors, matchTools === undefined, 'memory-normalizer match.tools must be omitted when toolGroup is set');
+  }
+  pushIf(errors, s.sourceTools === undefined, 'memory-normalizer settings.sourceTools is deprecated; use match.toolGroup');
   const requiredMutationSuffixes = [
     'memory_store',
     'memory_update',
@@ -779,14 +829,15 @@ function validateMemoryNormalizer(config, errors) {
     'memory_resolve',
     'memory_cleanup',
     'memory_delete',
-    'mistake_note_add'
+    'mistake_note_add',
   ];
-  if (Array.isArray(s.sourceTools)) {
+  const resolvedTools = hasToolGroup ? expandToolGroup(toolGroup) : matchTools;
+  if (Array.isArray(resolvedTools)) {
     for (const suffix of requiredMutationSuffixes) {
       pushIf(
         errors,
-        s.sourceTools.some((tool) => tool === suffix || String(tool).endsWith(`__${suffix}`)),
-        `memory-normalizer sourceTools missing ${suffix}`
+        resolvedTools.some((tool) => tool === suffix || String(tool).endsWith(`__${suffix}`)),
+        `memory-normalizer match missing ${suffix}`
       );
     }
   }
@@ -997,6 +1048,124 @@ function validateAgentDiffCompletionGate(config, errors) {
   );
 }
 
+function validateMemoryHarvester(config, errors) {
+  const hook = hookById(config, 'memory-harvester');
+  pushIf(errors, isObject(hook), 'missing hooks[id=memory-harvester]');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'Stop', 'memory-harvester.event must be Stop');
+  pushIf(errors, hook.script?.path === 'memory-harvester/harvest-stop.py', 'memory-harvester.script.path mismatch');
+  pushIf(errors, hook.failPolicy === 'open', 'memory-harvester.failPolicy must be open');
+  const s = hook.settings || {};
+  pushIf(errors, positiveInteger(s.transcriptTailBytes), 'memory-harvester settings.transcriptTailBytes invalid');
+  pushIf(errors, positiveInteger(s.reviewLastExchanges), 'memory-harvester settings.reviewLastExchanges invalid');
+  pushIf(errors, positiveInteger(s.runAfterNewExchanges), 'memory-harvester settings.runAfterNewExchanges invalid');
+  pushIf(errors, s.maxExchanges === undefined, 'memory-harvester settings.maxExchanges is deprecated; use reviewLastExchanges');
+  pushIf(errors, s.harvestEveryExchanges === undefined, 'memory-harvester settings.harvestEveryExchanges is deprecated; use runAfterNewExchanges');
+  if (positiveInteger(s.reviewLastExchanges) && positiveInteger(s.runAfterNewExchanges)) {
+    pushIf(
+      errors,
+      s.runAfterNewExchanges <= s.reviewLastExchanges,
+      'memory-harvester settings.runAfterNewExchanges must be <= settings.reviewLastExchanges'
+    );
+  }
+  pushIf(errors, positiveInteger(s.maxCandidatesPerStop), 'memory-harvester settings.maxCandidatesPerStop invalid');
+  pushIf(
+    errors,
+    s.stateDir === undefined || (typeof s.stateDir === 'string' && s.stateDir.length > 0),
+    'memory-harvester settings.stateDir must be a non-empty string when present'
+  );
+
+  const extraction = s.extraction;
+  if (extraction !== undefined) {
+    pushIf(errors, isObject(extraction), 'memory-harvester settings.extraction must be an object');
+    if (isObject(extraction)) {
+      const mode = extraction.mode;
+      pushIf(
+        errors,
+        mode === undefined || mode === 'llm' || mode === 'heuristic',
+        'memory-harvester settings.extraction.mode must be llm or heuristic'
+      );
+      const fallbackMode = extraction.fallbackMode;
+      pushIf(
+        errors,
+        fallbackMode === undefined || fallbackMode === 'heuristic' || fallbackMode === 'none',
+        'memory-harvester settings.extraction.fallbackMode must be heuristic or none'
+      );
+      if (mode === 'llm') {
+        const llm = extraction.llm;
+        pushIf(errors, isObject(llm), 'memory-harvester settings.extraction.llm required when mode=llm');
+        if (isObject(llm)) {
+          pushIf(errors, typeof llm.baseUrl === 'string' && llm.baseUrl.length > 0, 'memory-harvester settings.extraction.llm.baseUrl invalid');
+          pushIf(errors, typeof llm.model === 'string' && llm.model.length > 0, 'memory-harvester settings.extraction.llm.model invalid');
+          pushIf(errors, typeof llm.systemPrompt === 'string' && llm.systemPrompt.length > 0, 'memory-harvester settings.extraction.llm.systemPrompt invalid');
+          pushIf(errors, typeof llm.taskPrompt === 'string' && llm.taskPrompt.length > 0, 'memory-harvester settings.extraction.llm.taskPrompt invalid');
+          pushIf(errors, positiveInteger(llm.timeoutMs), 'memory-harvester settings.extraction.llm.timeoutMs invalid');
+          pushIf(errors, positiveInteger(llm.maxTokens), 'memory-harvester settings.extraction.llm.maxTokens invalid');
+          pushIf(errors, positiveInteger(llm.maxItemsPerStop), 'memory-harvester settings.extraction.llm.maxItemsPerStop invalid');
+        }
+      }
+      const heuristic = extraction.heuristic;
+      if (isObject(heuristic)) {
+        pushIf(errors, positiveInteger(heuristic.maxSentencesPerExchange), 'memory-harvester settings.extraction.heuristic.maxSentencesPerExchange invalid');
+        pushIf(errors, positiveInteger(heuristic.minAssistantChars), 'memory-harvester settings.extraction.heuristic.minAssistantChars invalid');
+      }
+    }
+  } else {
+    pushIf(errors, positiveInteger(s.maxSentencesPerExchange), 'memory-harvester settings.maxSentencesPerExchange invalid');
+    pushIf(errors, positiveInteger(s.minAssistantChars), 'memory-harvester settings.minAssistantChars invalid');
+  }
+
+  const hindsight = s.hindsight;
+  if (hindsight !== undefined) {
+    pushIf(errors, isObject(hindsight), 'memory-harvester settings.hindsight must be an object');
+    if (isObject(hindsight)) {
+      pushIf(
+        errors,
+        hindsight.enabled === undefined || typeof hindsight.enabled === 'boolean',
+        'memory-harvester settings.hindsight.enabled must be boolean when present'
+      );
+      if (typeof hindsight.endpoint === 'string' && hindsight.endpoint.length > 0) {
+        pushIf(errors, /^https?:\/\//.test(hindsight.endpoint), 'memory-harvester settings.hindsight.endpoint must be http(s) URL');
+      }
+      if (hindsight.timeoutMs !== undefined) {
+        pushIf(errors, positiveInteger(hindsight.timeoutMs), 'memory-harvester settings.hindsight.timeoutMs invalid');
+      }
+      if (typeof hindsight.documentIdPrefix === 'string') {
+        pushIf(errors, hindsight.documentIdPrefix.length > 0, 'memory-harvester settings.hindsight.documentIdPrefix invalid');
+      }
+      const retainLlm = hindsight.retainLlm;
+      if (retainLlm !== undefined) {
+        pushIf(errors, isObject(retainLlm), 'memory-harvester settings.hindsight.retainLlm must be an object');
+        if (isObject(retainLlm)) {
+          pushIf(errors, retainLlm.provider === 'openai', 'memory-harvester settings.hindsight.retainLlm.provider must be openai');
+          pushIf(errors, typeof retainLlm.baseUrl === 'string' && retainLlm.baseUrl.length > 0, 'memory-harvester settings.hindsight.retainLlm.baseUrl invalid');
+          pushIf(errors, typeof retainLlm.apiKey === 'string' && retainLlm.apiKey.length > 0, 'memory-harvester settings.hindsight.retainLlm.apiKey invalid');
+          pushIf(errors, typeof retainLlm.model === 'string' && retainLlm.model.length > 0, 'memory-harvester settings.hindsight.retainLlm.model invalid');
+          if (retainLlm.reasoningEffort !== undefined) {
+            pushIf(errors, ['low', 'medium', 'high'].includes(retainLlm.reasoningEffort), 'memory-harvester settings.hindsight.retainLlm.reasoningEffort invalid');
+          }
+          if (retainLlm.ensureScript !== undefined) {
+            pushIf(errors, typeof retainLlm.ensureScript === 'string' && retainLlm.ensureScript.length > 0, 'memory-harvester settings.hindsight.retainLlm.ensureScript invalid');
+          }
+
+          const llm = extraction?.llm;
+          if (isObject(llm)) {
+            for (const key of ['baseUrl', 'apiKey', 'model', 'reasoningEffort', 'ensureScript']) {
+              if (retainLlm[key] !== undefined && llm[key] !== undefined) {
+                pushIf(
+                  errors,
+                  retainLlm[key] === llm[key],
+                  `memory-harvester settings.hindsight.retainLlm.${key} must match settings.extraction.llm.${key}`
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 function validateStopCompletionChain(config, errors) {
   const script = (config.scripts || []).find((entry) => entry?.id === 'stop-completion-chain');
   pushIf(errors, isObject(script), 'missing scripts[id=stop-completion-chain]');
@@ -1005,8 +1174,8 @@ function validateStopCompletionChain(config, errors) {
   const chain = script.settings?.chain;
   pushIf(
     errors,
-    nonEmptyStringArray(chain) && chain.every((id) => isObject(hookById(config, id))),
-    'stop-completion-chain settings.chain must list existing hook ids'
+    nonEmptyStringArray(chain) && chain.includes('memory-harvester') && chain.every((id) => isObject(hookById(config, id))),
+    'stop-completion-chain settings.chain must list existing hook ids and include memory-harvester'
   );
   const s = script.settings || {};
   pushIf(errors, positiveInteger(s.stepTimeoutMs), 'stop-completion-chain settings.stepTimeoutMs invalid');
@@ -1049,6 +1218,7 @@ export function validateConfig(config) {
   validatePlanningStartGate(config, errors);
   validateQualityCompletionGate(config, errors);
   validateAgentDiffCompletionGate(config, errors);
+  validateMemoryHarvester(config, errors);
   validateStopCompletionChain(config, errors);
   validateFrontendDesignGate(config, errors);
   validateSkillIndexer(config, errors);

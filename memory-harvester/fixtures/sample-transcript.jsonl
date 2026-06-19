@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"We decided kai-chattr typography tokens must stay in apps/web/src/theme. Do not move them back into JSON-only contracts."}}
+{"type":"assistant","message":{"role":"assistant","content":"Decision: Kai-chattr typography source of truth stays in apps/web/src/theme with FontDraft typing preserved. Why: moving tokens back into JSON-only contracts broke Appearance UI parity and regressed runtime font roles."}}
+{"type":"user","message":{"role":"user","content":"ok"}}
+{"type":"assistant","message":{"role":"assistant","content":"Understood."}}
