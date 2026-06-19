@@ -25,6 +25,9 @@ function runSelfTest(scriptPath, expectedId) {
   assert.equal(data.configControlsRuntime, true);
   assert.equal(data.protocolExists, true);
   assert.equal(data.memoryDbExists, true);
+  assert.equal(data.memoryProvider, 'hindsight');
+  assert.equal(data.memoryFallbackProvider, 'sqlite');
+  assert.equal(data.hindsightEndpoint, 'http://127.0.0.1:10003/mcp/collective/');
   assert.ok(Array.isArray(data.extractedTerms));
   assert.ok(data.sourceResults && typeof data.sourceResults === 'object');
   assert.ok(data.sourceResults.skills && typeof data.sourceResults.skills.ok === 'boolean');

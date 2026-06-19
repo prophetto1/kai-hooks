@@ -204,7 +204,7 @@ export function modeInjectionBlock(mode) {
     'Or call sequential-thinking MCP once (counts as a planning checkpoint).',
     '',
     'Override classification: start prompt with `mode: implement` (or fix/refactor/review/explore/docs).',
-    'Full map: E:/hooks/_docs/task-mode-and-skills.md',
+    'Skill catalog: E:/hooks/skills-catalog.md',
   );
   return lines.join('\n');
 }

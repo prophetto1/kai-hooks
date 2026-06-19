@@ -59,7 +59,7 @@ def utc_iso(ts: float | None = None) -> str:
 
 
 def memory_db(config: dict[str, Any]) -> str:
-    return config.get("shared", {}).get("paths", {}).get("memoryDb", "E:/memory/memory-sqlite.db")
+    return config.get("shared", {}).get("paths", {}).get("memoryDb", "E:/_memory/memory-sqlite.db")
 
 
 def ensure_audit_schema(con: sqlite3.Connection, table: str) -> None:

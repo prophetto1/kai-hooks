@@ -72,7 +72,7 @@ def load_config(path: str = CONFIG_PATH) -> dict[str, Any]:
 
 
 def memory_db(config: dict[str, Any]) -> str:
-    return config.get("shared", {}).get("paths", {}).get("memoryDb", "E:/memory/memory-sqlite.db")
+    return config.get("shared", {}).get("paths", {}).get("memoryDb", "E:/_memory/memory-sqlite.db")
 
 
 def connect_readonly(db_path: str) -> sqlite3.Connection:

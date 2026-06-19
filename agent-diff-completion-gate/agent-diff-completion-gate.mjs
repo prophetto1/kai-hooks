@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * Stop gate for operational diffs (apps/, services/, scripts/).
+ * Stop gate for repo-scoped operational diffs.
  *
- * LOC tiers (in-scope insertions + deletions):
- *   1–500   → Playwright → verification-before-completion
- *   501+    → Playwright → verification-before-completion → waza-hunt
- *             If hunt finds issues: fix → Playwright → verification (max 3 loops)
+ * Per-repo policies live in config.json under:
+ *   hooks[id=agent-diff-completion-gate].settings.repos[]
+ *
+ * Each repo can define one or more rules. A rule matches changed files by path,
+ * then triggers when either its changed file count or changed LOC threshold is
+ * met. Triggered diffs run the repo's live verification command before the
+ * agent can claim completion.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,6 +23,7 @@ import {
   normalizePath,
   readJsonStdin,
   stopFailureResponse,
+  touchedDomains,
   writeJson,
 } from '../quality-completion-gate/quality-gate-core.mjs';
 import {
@@ -30,9 +34,9 @@ import {
 } from '../quality-completion-gate/verification-integrity.mjs';
 
 const DEFAULT_STATE_DIR = 'E:/hooks/.state/agent-diff-completion-gate';
-const LOC_SMALL_MAX = 500;
 const LOC_LARGE_MIN = 501;
 const DEFAULT_MAX_REMEDIATION_LOOPS = 3;
+const TRIGGER_MODES = new Set(['files', 'loc', 'files-or-loc', 'files-and-loc']);
 
 const SKILL_VERIFICATION =
   process.env.SKILL_VERIFICATION_BEFORE_COMPLETION ||
@@ -40,17 +44,6 @@ const SKILL_VERIFICATION =
 const SKILL_WAZA_HUNT =
   process.env.SKILL_WAZA_HUNT ||
   'C:/Users/jwchu/.agents/skills/waza-hunt/SKILL.md';
-
-const REPO_RULES = {
-  'E:/kai-chattr': {
-    enforcePrefixes: ['apps/', 'services/', 'scripts/'],
-    codeExtensions: ['.py', '.ts', '.tsx', '.js', '.mjs', '.cjs', '.css', '.json', '.ps1', '.toml'],
-    visualCommand: 'sops exec-env secrets/dev/auth.yaml "node scripts/dev/ui-snapshot-live.mjs"',
-    visualTimeoutMs: 120000,
-    playwrightLabel: 'kai-chattr Playwright UI snapshot',
-    verificationDir: 'docs/verification',
-  },
-};
 
 const VERIFICATION_PATTERNS = [
   'verification-before-completion',
@@ -86,8 +79,10 @@ function writeState(path, value) {
   }
 }
 
-function repoRule(repoRoot) {
-  return REPO_RULES[normalizeAbsolute(repoRoot)] || null;
+function repoPolicy(settings, repoRoot) {
+  const normalizedRoot = normalizeAbsolute(repoRoot);
+  return (Array.isArray(settings.repos) ? settings.repos : [])
+    .find((policy) => normalizeAbsolute(policy?.root) === normalizedRoot) || null;
 }
 
 function fileExtension(file) {
@@ -96,21 +91,54 @@ function fileExtension(file) {
   return index >= 0 ? base.slice(index).toLowerCase() : '';
 }
 
-function fileInScope(file, rule) {
-  const normalized = normalizePath(file);
-  if (!rule.enforcePrefixes.some((prefix) => normalized.startsWith(prefix))) return false;
-  const extensions = rule.codeExtensions;
+function extensionAllowed(file, extensions) {
   if (!extensions?.length) return true;
+  const normalized = normalizePath(file);
   const ext = fileExtension(normalized);
   return ext ? extensions.includes(ext) : true;
 }
 
-function touchesEnforcedScope(files, rule) {
-  return files.some((file) => fileInScope(file, rule));
+function extensionsForRule(policy, rule) {
+  return Array.isArray(rule.extensions) ? rule.extensions : policy.extensions;
 }
 
-function scopedFiles(files, rule) {
-  return files.filter((file) => fileInScope(file, rule));
+function ruleName(rule, index) {
+  return typeof rule.name === 'string' && rule.name.length > 0 ? rule.name : `rule-${index + 1}`;
+}
+
+function filesForRule(files, policy, rule, index) {
+  const name = ruleName(rule, index);
+  const repoEntry = {
+    domains: {
+      [name]: {
+        paths: Array.isArray(rule.paths) ? rule.paths : [],
+      },
+    },
+  };
+  const { touched } = touchedDomains(repoEntry, files);
+  const matched = touched.get(name) || [];
+  const extensions = extensionsForRule(policy, rule);
+  return matched.filter((file) => extensionAllowed(file, extensions));
+}
+
+function positive(value) {
+  return Number.isInteger(value) && value > 0;
+}
+
+function ruleTriggered(trigger, fileCount, locTotal) {
+  const mode = TRIGGER_MODES.has(trigger?.mode) ? trigger.mode : 'files-or-loc';
+  const fileHit = positive(trigger?.minChangedFiles) && fileCount >= trigger.minChangedFiles;
+  const locHit = positive(trigger?.minChangedLoc) && locTotal >= trigger.minChangedLoc;
+
+  if (mode === 'files') return fileHit;
+  if (mode === 'loc') return locHit;
+  if (mode === 'files-and-loc') return fileHit && locHit;
+  return fileHit || locHit;
+}
+
+function largeLocMin(policy, settings) {
+  const value = policy?.tiers?.largeLocMin ?? settings.locLargeMin ?? LOC_LARGE_MIN;
+  return positive(value) ? value : LOC_LARGE_MIN;
 }
 
 function countLinesInFile(absPath) {
@@ -182,12 +210,60 @@ function scopeLocTotal(repoRoot, scoped, timeoutMs) {
   }
 }
 
-function locTier(total, settings) {
-  const smallMax = Number(settings.locSmallMax ?? LOC_SMALL_MAX);
-  const largeMin = Number(settings.locLargeMin ?? LOC_LARGE_MIN);
-  if (total >= largeMin) return 'large';
-  if (total >= 1) return 'small';
-  return 'none';
+function locTier(total, largeMin) {
+  return total >= largeMin ? 'large' : 'small';
+}
+
+function uniqueFiles(files) {
+  return [...new Set(files.map(normalizePath))].sort();
+}
+
+function verificationRule(policy) {
+  const verification = policy.verification || {};
+  return {
+    visualCommand: verification.command,
+    visualTimeoutMs: verification.timeoutMs || 120000,
+    playwrightLabel: verification.label || `${policy.name || policy.root} live verification`,
+    verificationDir: verification.verificationDir || 'docs/verification',
+    requireLiveApi: verification.requireLiveApi !== false,
+    requireFrontendLogin: verification.requireFrontendLogin !== false,
+  };
+}
+
+function evaluatePolicy(repoRoot, files, policy, settings, gitTimeout) {
+  if (!policy || policy.enabled === false) return { triggered: false };
+
+  const evaluations = [];
+  for (const [index, rule] of (policy.rules || []).entries()) {
+    const matchedFiles = filesForRule(files, policy, rule, index);
+    if (!matchedFiles.length) continue;
+    const loc = scopeLocTotal(repoRoot, matchedFiles, gitTimeout);
+    const trigger = rule.trigger || policy.trigger || {};
+    evaluations.push({
+      name: ruleName(rule, index),
+      files: matchedFiles,
+      fileCount: matchedFiles.length,
+      loc,
+      trigger,
+      triggered: ruleTriggered(trigger, matchedFiles.length, loc.total),
+    });
+  }
+
+  const triggeredRules = evaluations.filter((rule) => rule.triggered);
+  if (!triggeredRules.length) return { triggered: false, evaluations };
+
+  const changedInScope = uniqueFiles(triggeredRules.flatMap((rule) => rule.files));
+  const loc = scopeLocTotal(repoRoot, changedInScope, gitTimeout);
+  const minLarge = largeLocMin(policy, settings);
+  return {
+    triggered: true,
+    policy,
+    changedInScope,
+    loc,
+    tier: locTier(loc.total, minLarge),
+    largeLocMin: minLarge,
+    triggeredRules,
+  };
 }
 
 function parseVerificationSummary(output) {
@@ -220,7 +296,7 @@ function verifyRunArtifacts(repoRoot, summary, rule) {
   } catch {
     return { ok: false, reason: `Unreadable run.json in ${summary.runDir}` };
   }
-  if (runMeta.liveApi !== true) {
+  if (rule.requireLiveApi !== false && runMeta.liveApi !== true) {
     return {
       ok: false,
       fraud: true,
@@ -230,7 +306,7 @@ function verifyRunArtifacts(repoRoot, summary, rule) {
       ),
     };
   }
-  if (runMeta.frontendLogin !== true) {
+  if (rule.requireFrontendLogin !== false && runMeta.frontendLogin !== true) {
     return {
       ok: false,
       fraud: true,
@@ -443,7 +519,7 @@ function buildVerificationSection() {
   ];
 }
 
-function buildWazaSection(remediationCycle, maxLoops) {
+function buildWazaSection(remediationCycle, maxLoops, largeLocMin) {
   return [
     `## Step 3 — waza-hunt (required: ${LOC_LARGE_MIN}+ LOC in this diff)`,
     `Read and follow: ${SKILL_WAZA_HUNT}`,
@@ -458,6 +534,21 @@ function buildWazaSection(remediationCycle, maxLoops) {
   ];
 }
 
+function buildPolicyWazaSection(remediationCycle, maxLoops, largeLocMin) {
+  return [
+    `## Step 3 - waza-hunt (required: ${largeLocMin}+ LOC in this diff)`,
+    `Read and follow: ${SKILL_WAZA_HUNT}`,
+    'Diagnose before you fix. State root cause with file:line evidence.',
+    '',
+    'If hunt finds issues you MUST:',
+    '  1. Report the issue explicitly',
+    '  2. State corrective action / root cause',
+    '  3. Execute the fix',
+    '  4. Try Stop again -> Playwright re-runs -> verification-before-completion re-runs',
+    `Remediation loop ${remediationCycle}/${maxLoops}. After ${maxLoops} failed loops, report that the implementation has gone wrong - do not claim done.`,
+  ];
+}
+
 function buildChecklist(ctx) {
   const {
     repoRoot,
@@ -469,12 +560,15 @@ function buildChecklist(ctx) {
     phase,
     remediationCycle,
     maxLoops,
+    triggeredRules,
+    largeLocMin,
   } = ctx;
 
   const lines = [
     'agent-diff-completion-gate: operational diff — completion blocked.',
     '',
     `Repo: ${repoRoot}`,
+    `Triggered rule(s): ${triggeredRules.map((item) => `${item.name} (${item.fileCount} file(s), ${item.loc.total} LOC)`).join(', ')}`,
     `LOC changed (in-scope): ${loc.total} (+${loc.insertions}/-${loc.deletions}) → tier: ${tier}`,
     `Changed: ${changedInScope.join(', ')}`,
     `Phase: ${phase}`,
@@ -485,7 +579,7 @@ function buildChecklist(ctx) {
   ];
 
   if (tier === 'large') {
-    lines.push('', ...buildWazaSection(remediationCycle, maxLoops));
+    lines.push('', ...buildPolicyWazaSection(remediationCycle, maxLoops, largeLocMin));
   }
 
   lines.push(
@@ -517,7 +611,9 @@ function evaluate(input, runtime) {
   if (!rootResult.ok) return { continue: true };
 
   const repoRoot = rootResult.value;
-  const rule = repoRule(repoRoot);
+  const policy = repoPolicy(settings, repoRoot);
+  if (!policy || policy.enabled === false) return { continue: true };
+
   const filesResult = changedFiles(repoRoot, gitTimeout);
   if (!filesResult.ok || !filesResult.value.length) {
     writeState(statePath(sessionId, repoRoot), {});
@@ -525,16 +621,17 @@ function evaluate(input, runtime) {
   }
 
   const files = filesResult.value;
-  if (!rule || !touchesEnforcedScope(files, rule)) {
-    return { continue: true };
-  }
+  const policyResult = evaluatePolicy(repoRoot, files, policy, settings, gitTimeout);
+  if (!policyResult.triggered) return { continue: true };
 
-  const changedInScope = scopedFiles(files, rule);
-  const loc = scopeLocTotal(repoRoot, changedInScope, gitTimeout);
-  const tier = locTier(loc.total, settings);
-  if (tier === 'none') return { continue: true };
-
-  const diffSignature = hash({ files: files.slice().sort(), loc: loc.total });
+  const rule = verificationRule(policy);
+  const { changedInScope, loc, tier, largeLocMin, triggeredRules } = policyResult;
+  const diffSignature = hash({
+    repoRoot,
+    files: changedInScope,
+    loc: loc.total,
+    triggeredRules: triggeredRules.map((item) => item.name),
+  });
   const stateFile = statePath(sessionId, repoRoot);
   const state = readState(stateFile);
   const sameDiff = state.diffSignature === diffSignature;
@@ -600,6 +697,8 @@ function evaluate(input, runtime) {
           phase: 'playwright',
           remediationCycle,
           maxLoops: maxRemediationLoops,
+          triggeredRules,
+          largeLocMin,
         });
 
     if (remediationCycle > maxRemediationLoops) {
@@ -642,6 +741,8 @@ function evaluate(input, runtime) {
         phase: 'verification-before-completion',
         remediationCycle,
         maxLoops: maxRemediationLoops,
+        triggeredRules,
+        largeLocMin,
       }),
     );
   }
@@ -675,6 +776,8 @@ function evaluate(input, runtime) {
           phase: 'waza-hunt',
           remediationCycle,
           maxLoops: maxRemediationLoops,
+          triggeredRules,
+          largeLocMin,
         }),
       );
     }

@@ -24,14 +24,6 @@ function scriptById(source, id) {
 const current = validateConfig(config);
 assert.deepEqual(current.errors, [], current.errors.join('\n'));
 
-const badBrowserVerifyEvent = structuredClone(config);
-hookById(badBrowserVerifyEvent, 'browser-verify-gate').event = 'PreToolUse';
-const badBrowserVerifyEventResult = validateConfig(badBrowserVerifyEvent);
-assert.ok(
-  badBrowserVerifyEventResult.errors.some((error) => error.includes('browser-verify-gate.event must be Stop')),
-  'browser-verify-gate event must be semantically validated'
-);
-
 const badEvent = structuredClone(config);
 badEvent.hooks[0].event = 'PromptSubmit';
 const badEventResult = validateConfig(badEvent);
@@ -62,6 +54,30 @@ const badMemorySignalResult = validateConfig(badMemorySignal);
 assert.ok(
   badMemorySignalResult.errors.some((error) => error.includes('memory.scoring.signals.fts.weight')),
   'memory scoring signal weights must be validated against the model'
+);
+
+const badMemoryProvider = structuredClone(config);
+badMemoryProvider.hooks[0].settings.sources.memory.provider = 'vector';
+const badMemoryProviderResult = validateConfig(badMemoryProvider);
+assert.ok(
+  badMemoryProviderResult.errors.some((error) => error.includes('memory.provider')),
+  'memory provider must be validated'
+);
+
+const badHindsightEndpoint = structuredClone(config);
+badHindsightEndpoint.hooks[0].settings.sources.memory.hindsight.endpoint = 'file:///memory';
+const badHindsightEndpointResult = validateConfig(badHindsightEndpoint);
+assert.ok(
+  badHindsightEndpointResult.errors.some((error) => error.includes('memory.hindsight.endpoint')),
+  'Hindsight endpoint must be validated'
+);
+
+const badHindsightTools = structuredClone(config);
+badHindsightTools.hooks[0].settings.sources.memory.hindsight.requiredTools = ['recall'];
+const badHindsightToolsResult = validateConfig(badHindsightTools);
+assert.ok(
+  badHindsightToolsResult.errors.some((error) => error.includes('memory.hindsight.requiredTools missing sync_retain')),
+  'Hindsight required tools must include sync_retain'
 );
 
 const badSkillWeights = structuredClone(config);
@@ -120,6 +136,30 @@ assert.ok(
   badQualityBudgetResult.errors.some((error) => error.includes('quality-completion-gate settings.totalBudgetMs invalid')),
   'quality-completion-gate total budget must be positive'
 );
+
+const badAgentDiffTriggerMode = structuredClone(config);
+hookById(badAgentDiffTriggerMode, 'agent-diff-completion-gate').settings.repos[0].rules[0].trigger.mode = 'files-xor-loc';
+const badAgentDiffTriggerModeResult = validateConfig(badAgentDiffTriggerMode);
+assert.ok(
+  badAgentDiffTriggerModeResult.errors.some((error) => error.includes('agent-diff-completion-gate settings.repos[0].rules[0].trigger.mode invalid')),
+  'agent-diff-completion-gate trigger mode must be validated'
+);
+
+const badAgentDiffVerification = structuredClone(config);
+delete hookById(badAgentDiffVerification, 'agent-diff-completion-gate').settings.repos[0].verification;
+const badAgentDiffVerificationResult = validateConfig(badAgentDiffVerification);
+assert.ok(
+  badAgentDiffVerificationResult.errors.some((error) => error.includes('agent-diff-completion-gate settings.repos[0].verification must be an object')),
+  'enabled agent-diff repo must declare verification'
+);
+
+const disabledAgentDiffRepo = structuredClone(config);
+const disabledRepo = hookById(disabledAgentDiffRepo, 'agent-diff-completion-gate').settings.repos[0];
+disabledRepo.enabled = false;
+delete disabledRepo.rules;
+delete disabledRepo.verification;
+const disabledAgentDiffRepoResult = validateConfig(disabledAgentDiffRepo);
+assert.deepEqual(disabledAgentDiffRepoResult.errors, [], 'disabled agent-diff repo may omit rules and verification');
 
 const badStopChainStepTimeout = structuredClone(config);
 scriptById(badStopChainStepTimeout, 'stop-completion-chain').settings.stepTimeoutMs = 0;

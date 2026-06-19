@@ -257,14 +257,18 @@ function sourceResult(source, result) {
     skipped: false,
     rows: result.ok ? parseObjects(result.lines) : [],
     elapsedMs: result.elapsedMs,
-    error: result.error || null
+    error: result.error || null,
+    diagnostics: result.diagnostics || [],
   };
 }
 
 function sourceDiagnostics(results) {
   return results
-    .filter((result) => result && !result.ok)
-    .map((result) => `${result.source}: ${clip(result.error, 320)}`);
+    .filter(Boolean)
+    .flatMap((result) => [
+      ...(Array.isArray(result.diagnostics) ? result.diagnostics : []),
+      ...(!result.ok ? [`${result.source}: ${clip(result.error, 320)}`] : []),
+    ]);
 }
 
 function memoryFilterSql(filters) {
@@ -275,10 +279,11 @@ function memoryFilterSql(filters) {
   });
 }
 
-function recall(t, proj) {
+function sqliteRecall(t, proj) {
   const M = S.memory;
   if (t.length < M.minTerms) {
     return skippedSource('memory', 'insufficient_terms', {
+      provider: 'sqlite',
       termCount: t.length,
       minTerms: M.minTerms
     });
@@ -294,7 +299,187 @@ function recall(t, proj) {
     scoring: M.scoring,
     crossProjectTag: SHARED.memoryTags.crossProjectTag
   };
-  return sourceResult('memory', py('memory recall', join(here, 'recall.py'), [DB, q, proj || '', JSON.stringify(config)]));
+  return {
+    ...sourceResult('memory', py('memory recall', join(here, 'recall.py'), [DB, q, proj || '', JSON.stringify(config)])),
+    provider: 'sqlite',
+  };
+}
+
+function parseMcpPayload(text) {
+  let content = String(text || '').trim();
+  if (!content) return {};
+  if (content.startsWith('event:')) {
+    const dataLine = content.split(/\r?\n/).find((line) => line.startsWith('data: '));
+    if (!dataLine) throw new Error('MCP response used SSE without a data line');
+    content = dataLine.slice(6).trim();
+  }
+  return JSON.parse(content);
+}
+
+function withTimeout(timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  return { signal: controller.signal, clear: () => clearTimeout(timer) };
+}
+
+async function mcpPost(endpoint, body, headers, timeoutMs) {
+  const timeout = withTimeout(timeoutMs);
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json, text/event-stream',
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(body),
+      signal: timeout.signal,
+    });
+    const text = await response.text();
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${clip(text, 1000)}`);
+    return { response, payload: parseMcpPayload(text) };
+  } finally {
+    timeout.clear();
+  }
+}
+
+async function callHindsightTool(memorySettings, toolName, args) {
+  const H = memorySettings.hindsight;
+  const timeoutMs = H.timeoutMs;
+  const init = await mcpPost(H.endpoint, {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: 'hooks-inject-protocol', version: '1.0.0' },
+    },
+  }, {}, timeoutMs);
+  const sessionId = init.response.headers.get('mcp-session-id') || init.response.headers.get('Mcp-Session-Id');
+  if (!sessionId) throw new Error('Hindsight initialize returned no MCP session id');
+
+  const sessionHeaders = { 'mcp-session-id': sessionId };
+  await mcpPost(H.endpoint, {
+    jsonrpc: '2.0',
+    method: 'notifications/initialized',
+    params: {},
+  }, sessionHeaders, timeoutMs);
+
+  const call = await mcpPost(H.endpoint, {
+    jsonrpc: '2.0',
+    id: 2,
+    method: 'tools/call',
+    params: { name: toolName, arguments: args },
+  }, sessionHeaders, timeoutMs);
+  return call.payload;
+}
+
+function resultTextFromContent(content) {
+  if (!Array.isArray(content)) return '';
+  return content.map((item) => textFromContent(item?.text ?? item?.content ?? item)).filter(Boolean).join('\n');
+}
+
+function hindsightStructuredContent(payload) {
+  const result = payload?.result || {};
+  if (result.structuredContent) return result.structuredContent;
+  const text = resultTextFromContent(result.content);
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { results: [{ text }] };
+  }
+}
+
+function hindsightRowText(row) {
+  return textFromContent(row?.text ?? row?.content ?? row?.memory ?? row?.fact ?? row?.summary ?? row);
+}
+
+function normalizeHindsightRows(payload) {
+  const structured = hindsightStructuredContent(payload);
+  const rows = structured.results || structured.memories || structured.items || structured.chunks || [];
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => ({
+    text: hindsightRowText(row),
+    score: Number(row?.score ?? row?.relevance ?? row?.similarity ?? 0),
+    signals: {
+      provider: 'hindsight',
+      ...(isObject(row?.signals) ? row.signals : {}),
+    },
+  })).filter((row) => row.text);
+}
+
+async function hindsightRecall(t, proj) {
+  const M = S.memory;
+  if (t.length < M.minTerms) {
+    return skippedSource('memory', 'insufficient_terms', {
+      provider: 'hindsight',
+      termCount: t.length,
+      minTerms: M.minTerms,
+    });
+  }
+
+  const startedAt = Date.now();
+  try {
+    const query = [proj, ...t].filter(Boolean).join(' ');
+    const payload = await callHindsightTool(M, M.hindsight.tool, {
+      query,
+      limit: M.max,
+    });
+    return {
+      source: 'memory',
+      ok: true,
+      skipped: false,
+      provider: 'hindsight',
+      rows: normalizeHindsightRows(payload),
+      elapsedMs: Date.now() - startedAt,
+      error: null,
+      diagnostics: [],
+    };
+  } catch (err) {
+    const error = err && (err.stack || err.message) || String(err);
+    safeEvent('source-error', { label: 'hindsight recall', elapsedMs: Date.now() - startedAt, error });
+    console.error(`[${ID}] hindsight recall failed after ${Date.now() - startedAt}ms: ${error}`);
+    return {
+      source: 'memory',
+      ok: false,
+      skipped: false,
+      provider: 'hindsight',
+      rows: [],
+      elapsedMs: Date.now() - startedAt,
+      error,
+      diagnostics: [],
+    };
+  }
+}
+
+async function recall(t, proj) {
+  const provider = S.memory.provider || 'sqlite';
+  if (provider !== 'hindsight') return sqliteRecall(t, proj);
+
+  const primary = await hindsightRecall(t, proj);
+  const fallbackProvider = S.memory.fallbackProvider || 'none';
+  const shouldFallback =
+    fallbackProvider === 'sqlite' &&
+    !primary.skipped &&
+    (!primary.ok || (S.memory.fallbackOnEmpty === true && primary.rows.length === 0));
+
+  if (!shouldFallback) return primary;
+
+  const fallback = sqliteRecall(t, proj);
+  return {
+    ...fallback,
+    provider: 'hindsight',
+    fallbackProvider: 'sqlite',
+    primary,
+    diagnostics: [
+      primary.ok
+        ? 'Hindsight recall returned no rows; SQLite compatibility fallback was used.'
+        : `Hindsight recall failed; SQLite compatibility fallback was used: ${clip(primary.error, 240)}`,
+      ...(fallback.diagnostics || []),
+    ],
+  };
 }
 
 function skillNoise() {
@@ -339,12 +524,12 @@ function outputLabels(proj) {
   };
 }
 
-function selfTest() {
+async function selfTest() {
   const sample = process.argv.filter(x => !x.startsWith('--')).slice(2).join(' ') || 'optimize this hook system';
   const proj = project('E:/hooks'.replace(/\\/g, '/').toLowerCase());
   const extracted = terms(sample, []);
   const skillResult = suggest(extracted, proj);
-  const memoryResult = recall(extracted, proj);
+  const memoryResult = await recall(extracted, proj);
   console.log(JSON.stringify({
     id: ID,
     enabled: ENABLED,
@@ -355,6 +540,9 @@ function selfTest() {
     protocolExists: existsSync(join(here, S.protocolFile)),
     memoryDb: DB,
     memoryDbExists: existsSync(DB),
+    memoryProvider: S.memory.provider || 'sqlite',
+    memoryFallbackProvider: S.memory.fallbackProvider || 'none',
+    hindsightEndpoint: S.memory.hindsight?.endpoint || '',
     projectCount: SHARED.projects.entries.length,
     memoryScoring: S.memory.scoring,
     skillScoring: S.skills.scoring,
@@ -373,6 +561,10 @@ function selfTest() {
       memory: {
         ok: memoryResult.ok,
         skipped: memoryResult.skipped || false,
+        provider: memoryResult.provider || null,
+        fallbackProvider: memoryResult.fallbackProvider || null,
+        primaryOk: memoryResult.primary ? memoryResult.primary.ok : memoryResult.ok,
+        primaryRowCount: memoryResult.primary ? memoryResult.primary.rows.length : memoryResult.rows.length,
         reason: memoryResult.reason || null,
         rowCount: memoryResult.rows.length,
         error: memoryResult.error || null
@@ -385,9 +577,9 @@ function selfTest() {
   }, null, 2));
 }
 
-function run() {
+async function run() {
   if (process.argv.includes('--self-test')) {
-    selfTest();
+    await selfTest();
     return;
   }
   if (!ENABLED) {
@@ -406,7 +598,7 @@ function run() {
     const proj = project(getCwd(payload));
     const extracted = terms(prompt, recentUserText(payload, prompt, S.terms.contextPrompts));
     const skillResult = suggest(extracted, proj);
-    const memoryResult = recall(extracted, proj);
+    const memoryResult = await recall(extracted, proj);
     const labels = outputLabels(proj);
     const diagnostics = sourceDiagnostics([skillResult, memoryResult]);
     safeEvent('source-summary', {
@@ -418,6 +610,8 @@ function run() {
       skillRows: skillResult.rows.length,
       memoryOk: memoryResult.ok,
       memorySkipped: memoryResult.skipped || false,
+      memoryProvider: memoryResult.provider || null,
+      memoryFallbackProvider: memoryResult.fallbackProvider || null,
       memoryRows: memoryResult.rows.length,
       diagnosticsCount: diagnostics.length
     });
@@ -441,7 +635,7 @@ function run() {
 }
 
 try {
-  run();
+  await run();
 } catch (err) {
   failOpen('unhandled hook failure', err);
 }

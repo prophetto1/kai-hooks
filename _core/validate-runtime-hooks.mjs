@@ -8,12 +8,12 @@ import { generateConfigSchema, validateConfig } from './config-model.mjs';
 const CONFIG_PATH = process.env.HOOKS_CONFIG_PATH || 'E:/hooks/config.json';
 const SCHEMA_PATH = 'E:/hooks/config.schema.json';
 const DIRECT_CURSOR_STOP_GATE_RE =
-  /run-hook\.mjs\s+stop\s+E:\/hooks\/(?:quality-completion-gate\/quality-completion-gate\.mjs|agent-diff-completion-gate\/agent-diff-completion-gate\.mjs|browser-verify-gate\/browser-verify-gate\.py)/i;
+  /run-hook\.mjs\s+stop\s+E:\/hooks\/(?:quality-completion-gate\/quality-completion-gate\.mjs|agent-diff-completion-gate\/agent-diff-completion-gate\.mjs)/i;
 const CURSOR_STOP_CHAIN_RE =
   /run-hook\.mjs\s+stop\s+E:\/hooks\/stop-completion-chain\/stop-completion-chain\.mjs/i;
 const MANAGED_HOOKS_STOP_RE = /E:\/hooks\//i;
 const DIRECT_CODEX_STOP_GATE_RE =
-  /(?:^|\s)E:\/hooks\/(?:quality-completion-gate\/quality-completion-gate\.mjs|agent-diff-completion-gate\/agent-diff-completion-gate\.mjs|browser-verify-gate\/browser-verify-gate\.py)/i;
+  /(?:^|\s)E:\/hooks\/(?:quality-completion-gate\/quality-completion-gate\.mjs|agent-diff-completion-gate\/agent-diff-completion-gate\.mjs)/i;
 const CODEX_STOP_CHAIN_RE =
   /(?:^|\s)E:\/hooks\/stop-completion-chain\/stop-completion-chain\.mjs/i;
 

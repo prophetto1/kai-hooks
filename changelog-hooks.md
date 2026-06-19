@@ -1,4 +1,4 @@
-﻿# Changelog
+# Changelog
 
 Project: hooks
 
@@ -9,6 +9,79 @@ Every time work changes the hooks codebase, find and update this changelog befor
 A codebase change includes source code edits, migrations, configuration changes, dependency changes, scripts, tests, docs that affect implementation behavior, or store/API/data changes tied to this project.
 
 ## Entries
+
+### 2026-06-19 - Hindsight-primary inject-protocol memory provider
+
+- Changed: `inject-protocol` now treats Hindsight as the primary memory recall
+  provider via `http://127.0.0.1:10003/mcp/collective/`.
+- Changed: SQLite/vector memory remains as an explicit compatibility fallback
+  and skill index, with diagnostics emitted whenever fallback recall is used.
+- Added: Hindsight provider config validation and runtime smoke coverage for
+  required Hindsight MCP tools.
+- Changed: `memory-normalizer` config text now marks the old row normalizer as
+  legacy SQLite/vector behavior, not the durable Hindsight memory path.
+
+### 2026-06-19 - Memory DB path and deleted-doc reference cleanup
+
+- Changed: `shared.paths.memoryDb` now points at the live
+  `E:/_memory/memory-sqlite.db` store, and memory-normalizer fallback defaults
+  use the same `_memory` path.
+- Changed: task-mode, planning-start, protocol, and runtime config text now
+  point agents at `E:/hooks/skills-catalog.md` or `config.json` instead of
+  deleted docs files.
+- Changed: hooks quality manifest no longer declares the removed docs directory
+  as an active runtime path.
+
+### 2026-06-18 - ADCG policy refactor and browser gate removal
+
+- Changed: `agent-diff-completion-gate` now reads per-repo `settings.repos[]`
+  policies from `config.json` instead of using hardcoded repo rules.
+- Added: ADCG policies support `rules[]` with path matchers and
+  `files-or-loc` trigger thresholds, plus disabled repo policies for deferred
+  adoption.
+- Removed: `browser-verify-gate` from active config, Stop-chain defaults,
+  runtime validation, quality-manifest commands, active runtime docs, and
+  tracked source files.
+
+### 2026-06-18 - Browser verification Stop gate disabled
+
+- Changed: Disabled `browser-verify-gate` in `config.json` and removed it from
+  the Stop completion chain metadata, so Stop no longer redirects agents into
+  MCP browser verification after browser-relevant turns.
+- Preserved: The gate implementation and tests remain in the repo for future
+  re-enable work; `quality-completion-gate` and `agent-diff-completion-gate`
+  remain in the Stop chain.
+
+### 2026-06-18 - kai-agent dated architecture note domain
+
+- Changed: `quality-completion-gate/quality-verify-manifest.json` now maps the
+  root `kai-agent` architecture note `0618.txt` to the existing `kai-agent`
+  repo verification domain, so the Stop gate runs the normal architecture,
+  unit, compile, and whitespace checks instead of blocking it as unmatched.
+
+### 2026-06-18 - Hindsight startup owner
+
+- Added: `hindsight/` now owns native Hindsight recovery for MCP Router with
+  `ensure-hindsight.ps1`, `verify-hindsight.ps1`, `install-startup-task.ps1`,
+  and a runbook README.
+- Changed: Registered the current-user Windows scheduled task
+  `JWC-Hindsight-10003` to run the ensure script at logon and keep
+  `http://127.0.0.1:10003/mcp/collective/` available after restarts.
+- Verification: Ran the live MCP initialize and `tools/list` check; Hindsight
+  returned 29 tools including `recall`, `list_memories`, `reflect`, and
+  `sync_retain`.
+
+### 2026-06-18 - Apache license standardization
+
+- Changed: Root `LICENSE` now uses Apache License 2.0 for the public hooks repo.
+
+
+### 2026-06-18 - kai-agent quality gate registration
+
+- Added: `quality-completion-gate/quality-verify-manifest.json` now registers
+  `E:/kai-agent` and runs its architecture guard, unit discovery, compile
+  check, and diff whitespace check for touched repo files.
+
 
 ### 2026-06-18
 
@@ -71,7 +144,7 @@ A codebase change includes source code edits, migrations, configuration changes,
 ### 2026-06-15 (c)
 
 - Added: `task-mode/` — UserPromptSubmit mode classification + PreToolUse planning checkpoint before mutators; expanded skills table includes `refactor`, `code-review`, `receiving-code-review`, `requesting-code-review`, `review-bugbot`.
-- Changed: `thinking-gate` read-only tool exemption; `_docs/task-mode-and-skills.md` canonical mode/skill map; `_docs/runtime-wiring.md` full three-layer stack.
+- Changed: `thinking-gate` read-only tool exemption; canonical mode/skill map; full three-layer stack.
 - Changed: Wired live Cursor (`~/.cursor/hooks.json`), Codex, Claude, and kai-chattr project hooks for inject → task-mode → planning → thinking → telemetry → Stop chain.
 - Verification: `node _core/validate-runtime-hooks.mjs`; `node task-mode/test-task-mode-core.mjs`; `node task-mode/task-mode-gate.mjs --self-test`.
 
@@ -89,7 +162,7 @@ A codebase change includes source code edits, migrations, configuration changes,
 ### 2026-06-14
 
 - Added: `stop-completion-chain/stop-completion-chain.mjs` — canonical Stop orchestrator running quality → agent-diff → browser gates in sequence for Codex and Claude Code.
-- Added: `agent-diff-completion-gate/test-agent-diff-completion-gate.mjs` smoke test and `_docs/runtime-wiring.md` with Codex/Claude/Cursor wiring instructions.
+- Added: `agent-diff-completion-gate/test-agent-diff-completion-gate.mjs` smoke test and Codex/Claude/Cursor runtime wiring instructions.
 - Added: `examples/codex/stop-hooks.fragment.toml` and `examples/claude/stop-hooks.fragment.json` templates.
 - Changed: Wired live `~/.codex/config.toml` Stop hook to the completion chain (was quality-only).
 - Changed: Wired live `~/.claude/settings.json` Stop hook to the completion chain (was missing).

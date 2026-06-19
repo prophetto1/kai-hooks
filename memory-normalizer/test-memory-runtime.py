@@ -7,6 +7,7 @@ import os
 import sqlite3
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 HOOK_DIR = Path(__file__).resolve().parent
@@ -163,6 +164,71 @@ def recall_check(config: dict) -> dict:
     }
 
 
+def parse_mcp_response(content: str) -> dict:
+    value = content.strip()
+    if value.startswith("event:"):
+        for line in value.splitlines():
+            if line.startswith("data: "):
+                value = line[6:].strip()
+                break
+    return json.loads(value) if value else {}
+
+
+def mcp_post(endpoint: str, body: dict, timeout: int, session_id: str | None = None) -> tuple[dict, str | None]:
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        },
+    )
+    if session_id:
+        request.add_header("mcp-session-id", session_id)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return (
+            parse_mcp_response(response.read().decode("utf-8")),
+            response.headers.get("mcp-session-id") or response.headers.get("Mcp-Session-Id"),
+        )
+
+
+def hindsight_check(config: dict) -> dict:
+    memory_settings = next(h for h in config["hooks"] if h["id"] == "inject-protocol")["settings"]["sources"]["memory"]
+    hindsight = memory_settings.get("hindsight", {})
+    endpoint = hindsight.get("endpoint", "")
+    timeout = max(1, int(hindsight.get("timeoutMs", 5000) / 1000))
+    required = hindsight.get("requiredTools", [])
+    if memory_settings.get("provider") != "hindsight":
+        return {"enabled": False, "endpoint": endpoint, "missingTools": [], "toolCount": 0}
+    init_body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "hooks-memory-runtime-test", "version": "1.0.0"},
+        },
+    }
+    try:
+        _, session_id = mcp_post(endpoint, init_body, timeout)
+        if not session_id:
+            return {"enabled": True, "endpoint": endpoint, "ok": False, "error": "initialize returned no session id", "missingTools": required, "toolCount": 0}
+        tools_payload, _ = mcp_post(endpoint, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}, timeout, session_id=session_id)
+        tool_names = [tool.get("name") for tool in tools_payload.get("result", {}).get("tools", [])]
+        missing = [tool for tool in required if tool not in tool_names]
+        return {
+            "enabled": True,
+            "endpoint": endpoint,
+            "ok": not missing,
+            "missingTools": missing,
+            "toolCount": len(tool_names),
+        }
+    except Exception as exc:
+        return {"enabled": True, "endpoint": endpoint, "ok": False, "error": str(exc), "missingTools": required, "toolCount": 0}
+
+
 def normalizer_check(config: dict) -> dict:
     project_content = "Decision: Kai Chattr devdocs content lives under apps/devdocs/content. Why: docs navigation depends on that source tree."
     first = build_retain_payload(project_content, config=config, cwd="E:/kai-chattr", source_tool="memory_store", now=1700000000)
@@ -200,6 +266,7 @@ def main() -> int:
     report = {
         "memoryDb": memory_db_check(config),
         "hooksDb": hooks_db_check(config),
+        "hindsight": hindsight_check(config),
         "recall": recall_check(config),
         "normalizer": normalizer_check(config),
     }
@@ -208,6 +275,8 @@ def main() -> int:
         errors.append(f"memory DB shape mismatch: {report['memoryDb']}")
     if report["hooksDb"]["missingTables"] or report["hooksDb"]["missingColumns"]:
         errors.append(f"hooks DB shape mismatch: {report['hooksDb']}")
+    if report["hindsight"].get("enabled") and not report["hindsight"].get("ok"):
+        errors.append(f"hindsight health check failed: {report['hindsight']}")
     if report["recall"]["exitCode"] != 0:
         errors.append(f"recall failed: {report['recall']['stderr']}")
     if report["recall"]["rowCount"] < 1:

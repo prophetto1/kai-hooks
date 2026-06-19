@@ -149,6 +149,67 @@
       }
     },
     {
+      "name": "kai-agent",
+      "root": "E:/kai-agent",
+      "blockOnUnmatched": true,
+      "domains": {
+        "repo": {
+          "paths": [
+            {
+              "prefixes": [
+                ".github/",
+                "_sources/",
+                "docs/",
+                "governance/",
+                "scripts/",
+                "src/",
+                "tests/"
+              ],
+              "excludeSegments": ["__pycache__"]
+            },
+            {
+              "fileNames": [
+                ".gitignore",
+                "0618.txt",
+                "AGENTS.md",
+                "LICENSE",
+                "README.md",
+                "THIRD_PARTY_NOTICES.md",
+                "changelog.md",
+                "pyproject.toml"
+              ]
+            }
+          ],
+          "commands": [
+            {
+              "label": "kai-agent architecture guard",
+              "command": "python scripts/check_architecture.py",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304
+            },
+            {
+              "label": "kai-agent unit tests",
+              "command": "python -m unittest discover -s tests",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304
+            },
+            {
+              "label": "kai-agent compile",
+              "command": "python -m compileall -q src scripts tests",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304
+            },
+            {
+              "label": "kai-agent diff whitespace",
+              "command": "git diff --check",
+              "timeoutMs": 30000,
+              "maxBuffer": 4194304
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "chattr",
       "root": "E:/chattr",
       "blockOnUnmatched": false,
@@ -198,7 +259,6 @@
             {
               "prefixes": [
                 "_db/",
-                "_docs/",
                 "docs/",
                 "hook-telemetry/",
                 "inject-protocol/",
@@ -208,7 +268,6 @@
                 "memory-normalizer/",
                 "quality-completion-gate/",
                 "agent-diff-completion-gate/",
-                "browser-verify-gate/",
                 "stop-completion-chain/",
                 "adapters/",
                 "examples/",
@@ -244,9 +303,8 @@
             { "label": "hooks inject protocol self-test", "command": "node inject-protocol/test-inject-protocol-self-test.mjs", "timeoutMs": 30000 },
             { "label": "hooks index-skills tests", "command": "python inject-protocol/test-index-skills.py", "timeoutMs": 30000 },
             { "label": "hooks telemetry log-event tests", "command": "python hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
-            { "label": "hooks browser verify gate tests", "command": "python browser-verify-gate/test-browser-verify-gate.py", "timeoutMs": 30000 },
-            { "label": "hooks agent diff completion gate smoke", "command": "node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs", "timeoutMs": 30000 },
-            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py browser-verify-gate/browser-verify-gate.py browser-verify-gate/test-browser-verify-gate.py", "timeoutMs": 30000 },
+            { "label": "hooks agent diff completion gate tests", "command": "node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs", "timeoutMs": 30000 },
+            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
             { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check stop-completion-chain/stop-completion-chain.mjs", "timeoutMs": 30000 }
           ]
         }

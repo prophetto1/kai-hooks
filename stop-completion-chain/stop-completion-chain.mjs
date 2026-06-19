@@ -16,7 +16,6 @@ const DEFAULT_STEP_TIMEOUT_MS = 180000;
 const DEFAULT_CHAIN = [
   { id: 'quality-completion-gate', script: 'quality-completion-gate/quality-completion-gate.mjs', runtime: 'node' },
   { id: 'agent-diff-completion-gate', script: 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', runtime: 'node' },
-  { id: 'browser-verify-gate', script: 'browser-verify-gate/browser-verify-gate.py', runtime: 'python' },
 ];
 
 function readStdin() {

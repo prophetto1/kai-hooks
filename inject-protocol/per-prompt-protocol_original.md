@@ -8,7 +8,7 @@
 - Dedupe first (`recall`/`list_memories` -> `sync_retain` only when the fact is not already represented).
 
 ## B. Skills (invoke & follow — naming one ≠ using it)
-- Load ≥1 matching skill per substantive turn (Tier-1 even on light turns; 2 for ideation→plan). Task mode + required skills: `E:/hooks/_docs/task-mode-and-skills.md` (injected by task-mode-gate). After output: `verification-before-completion`; large diffs: `waza-hunt`. Catalog: `E:/hooks/skills-catalog.md`.
+- Load ≥1 matching skill per substantive turn (Tier-1 even on light turns; 2 for ideation→plan). Task mode is injected by task-mode-gate. After output: `verification-before-completion`; large diffs: `waza-hunt`. Catalog: `E:/hooks/skills-catalog.md`.
 
 ## C. Writing repo files
 Conform to the repo's `contracts/`/`governance/` first — guardrails block non-conforming writes; no contract → nearest existing pattern.

@@ -307,6 +307,24 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "enum": [
+                  "agent-diff-completion-gate"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/agentDiffSettings"
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -526,6 +544,8 @@
     "memorySource": {
       "type": "object",
       "required": [
+        "provider",
+        "hindsight",
         "ftsTable",
         "joinTable",
         "filters",
@@ -537,6 +557,24 @@
         "explain"
       ],
       "properties": {
+        "provider": {
+          "enum": [
+            "hindsight",
+            "sqlite"
+          ]
+        },
+        "fallbackProvider": {
+          "enum": [
+            "sqlite",
+            "none"
+          ]
+        },
+        "fallbackOnEmpty": {
+          "type": "boolean"
+        },
+        "hindsight": {
+          "$ref": "#/$defs/hindsightMemorySource"
+        },
         "ftsTable": {
           "$ref": "#/$defs/nonEmptyString"
         },
@@ -579,6 +617,40 @@
         "explain": {
           "$ref": "#/$defs/explainConfig"
         }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "hindsightMemorySource": {
+      "type": "object",
+      "required": [
+        "endpoint",
+        "bankId",
+        "tool",
+        "timeoutMs",
+        "requiredTools"
+      ],
+      "properties": {
+        "endpoint": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "bankId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "tool": {
+          "const": "recall"
+        },
+        "timeoutMs": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "requiredTools": {
+          "$ref": "#/$defs/stringArray"
+        }
+      },
+      "patternProperties": {
+        "^_": true
       },
       "additionalProperties": false
     },
@@ -922,6 +994,220 @@
         "curatedRegex": {
           "$ref": "#/$defs/nonEmptyString"
         }
+      },
+      "additionalProperties": false
+    },
+    "pathRule": {
+      "type": "object",
+      "properties": {
+        "prefixes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "contains": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "extensions": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "fileNames": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "segments": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "excludePrefixes": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "excludeSegments": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "excludeContains": {
+          "$ref": "#/$defs/stringArray"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "agentDiffTrigger": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "files",
+            "loc",
+            "files-or-loc",
+            "files-and-loc"
+          ]
+        },
+        "minChangedFiles": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "minChangedLoc": {
+          "$ref": "#/$defs/positiveInteger"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "agentDiffRule": {
+      "type": "object",
+      "required": [
+        "name",
+        "paths",
+        "trigger"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/pathRule"
+          }
+        },
+        "extensions": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "trigger": {
+          "$ref": "#/$defs/agentDiffTrigger"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "agentDiffVerification": {
+      "type": "object",
+      "required": [
+        "command",
+        "timeoutMs",
+        "label",
+        "verificationDir"
+      ],
+      "properties": {
+        "command": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "timeoutMs": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "label": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "verificationDir": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "requireLiveApi": {
+          "type": "boolean"
+        },
+        "requireFrontendLogin": {
+          "type": "boolean"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "agentDiffRepo": {
+      "type": "object",
+      "required": [
+        "name",
+        "root",
+        "enabled"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "root": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "extensions": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentDiffRule"
+          }
+        },
+        "trigger": {
+          "$ref": "#/$defs/agentDiffTrigger"
+        },
+        "tiers": {
+          "type": "object",
+          "properties": {
+            "largeLocMin": {
+              "$ref": "#/$defs/positiveInteger"
+            }
+          },
+          "patternProperties": {
+            "^_": true
+          },
+          "additionalProperties": false
+        },
+        "verification": {
+          "$ref": "#/$defs/agentDiffVerification"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "agentDiffSettings": {
+      "type": "object",
+      "required": [
+        "maxRepeatedBlocks",
+        "failureMode",
+        "maxRemediationLoops",
+        "stateDir",
+        "repos"
+      ],
+      "properties": {
+        "maxRepeatedBlocks": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "failureMode": {
+          "enum": [
+            "block",
+            "report-only"
+          ]
+        },
+        "maxRemediationLoops": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "locLargeMin": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "stateDir": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "repos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/agentDiffRepo"
+          }
+        }
+      },
+      "patternProperties": {
+        "^_": true
       },
       "additionalProperties": false
     }

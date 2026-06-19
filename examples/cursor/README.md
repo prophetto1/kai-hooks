@@ -23,8 +23,8 @@ Requires **hook-telemetry** on `postToolUse` so agent-diff gate can detect verif
 }
 ```
 
-Do not wire Stop directly to `quality-completion-gate`, `agent-diff-completion-gate`, or
-`browser-verify-gate`. Stop must go through `stop-completion-chain` so completion gates run once,
+Do not wire Stop directly to `quality-completion-gate` or `agent-diff-completion-gate`.
+Stop must go through `stop-completion-chain` so completion gates run once,
 in order, with one shared loop policy.
 
 Restart Cursor after editing hooks.

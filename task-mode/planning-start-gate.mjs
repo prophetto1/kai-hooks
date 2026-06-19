@@ -17,7 +17,7 @@ function deny(toolName, mode, required) {
     `Load and follow ONE of: ${required.map((s) => `\`${s}\``).join(', ')}\n` +
     'Or call sequential-thinking MCP once.\n\n' +
     'Set mode explicitly: `mode: implement` | `fix` | `refactor` | `review` | `explore` | `docs`\n' +
-    'Map: E:/hooks/_docs/task-mode-and-skills.md';
+    'Skill catalog: E:/hooks/skills-catalog.md';
   return {
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',

@@ -14,6 +14,10 @@ const RUNTIME_ENUM = ['node', 'python'];
 const HOOK_CATEGORY_ENUM = ['push', 'gate', 'telemetry'];
 const FAIL_POLICY_ENUM = ['open', 'closed'];
 const PROJECT_KIND_ENUM = ['rebuild', 'legacy'];
+const ADCG_TRIGGER_MODE_ENUM = ['files', 'loc', 'files-or-loc', 'files-and-loc'];
+const MEMORY_PROVIDER_ENUM = ['hindsight', 'sqlite'];
+const MEMORY_FALLBACK_PROVIDER_ENUM = ['sqlite', 'none'];
+const HINDSIGHT_REQUIRED_TOOLS = ['recall', 'list_memories', 'reflect', 'sync_retain'];
 
 export const TOKENIZER_CONFIG = Object.freeze({
   defaultCharClass: '\\p{L}\\p{N}_-',
@@ -122,6 +126,10 @@ function definitions() {
           if: { properties: { id: { enum: ['inject-protocol'] } } },
           then: { properties: { settings: ref('injectSettings') } },
         },
+        {
+          if: { properties: { id: { enum: ['agent-diff-completion-gate'] } } },
+          then: { properties: { settings: ref('agentDiffSettings') } },
+        },
       ],
     }),
     script: objectSchema({
@@ -203,6 +211,8 @@ function definitions() {
     }),
     memorySource: objectSchema({
       required: [
+        'provider',
+        'hindsight',
         'ftsTable',
         'joinTable',
         'filters',
@@ -214,6 +224,10 @@ function definitions() {
         'explain',
       ],
       properties: {
+        provider: { enum: MEMORY_PROVIDER_ENUM },
+        fallbackProvider: { enum: MEMORY_FALLBACK_PROVIDER_ENUM },
+        fallbackOnEmpty: { type: 'boolean' },
+        hindsight: ref('hindsightMemorySource'),
         ftsTable: ref('nonEmptyString'),
         joinTable: ref('nonEmptyString'),
         filters: arrayOf(objectSchema({
@@ -229,6 +243,18 @@ function definitions() {
         scoring: ref('memoryScoring'),
         explain: ref('explainConfig'),
       },
+      ...noteFields(),
+    }),
+    hindsightMemorySource: objectSchema({
+      required: ['endpoint', 'bankId', 'tool', 'timeoutMs', 'requiredTools'],
+      properties: {
+        endpoint: ref('nonEmptyString'),
+        bankId: ref('nonEmptyString'),
+        tool: { const: 'recall' },
+        timeoutMs: ref('positiveInteger'),
+        requiredTools: ref('stringArray'),
+      },
+      ...noteFields(),
     }),
     scoreScale: objectSchema({
       required: ['min', 'max', 'baseline'],
@@ -370,6 +396,82 @@ function definitions() {
         dedupPrefer: ref('stringArray'),
         curatedRegex: ref('nonEmptyString'),
       },
+    }),
+    pathRule: objectSchema({
+      properties: {
+        prefixes: ref('stringArray'),
+        contains: ref('stringArray'),
+        extensions: ref('stringArray'),
+        fileNames: ref('stringArray'),
+        segments: ref('stringArray'),
+        excludePrefixes: ref('stringArray'),
+        excludeSegments: ref('stringArray'),
+        excludeContains: ref('stringArray'),
+      },
+      ...noteFields(),
+    }),
+    agentDiffTrigger: objectSchema({
+      required: ['mode'],
+      properties: {
+        mode: { enum: ADCG_TRIGGER_MODE_ENUM },
+        minChangedFiles: ref('positiveInteger'),
+        minChangedLoc: ref('positiveInteger'),
+      },
+      ...noteFields(),
+    }),
+    agentDiffRule: objectSchema({
+      required: ['name', 'paths', 'trigger'],
+      properties: {
+        name: ref('nonEmptyString'),
+        paths: arrayOf(ref('pathRule')),
+        extensions: ref('stringArray'),
+        trigger: ref('agentDiffTrigger'),
+      },
+      ...noteFields(),
+    }),
+    agentDiffVerification: objectSchema({
+      required: ['command', 'timeoutMs', 'label', 'verificationDir'],
+      properties: {
+        command: ref('nonEmptyString'),
+        timeoutMs: ref('positiveInteger'),
+        label: ref('nonEmptyString'),
+        verificationDir: ref('nonEmptyString'),
+        requireLiveApi: { type: 'boolean' },
+        requireFrontendLogin: { type: 'boolean' },
+      },
+      ...noteFields(),
+    }),
+    agentDiffRepo: objectSchema({
+      required: ['name', 'root', 'enabled'],
+      properties: {
+        name: ref('nonEmptyString'),
+        root: ref('nonEmptyString'),
+        enabled: { type: 'boolean' },
+        reason: { type: 'string' },
+        extensions: ref('stringArray'),
+        rules: arrayOf(ref('agentDiffRule')),
+        trigger: ref('agentDiffTrigger'),
+        tiers: objectSchema({
+          properties: {
+            largeLocMin: ref('positiveInteger'),
+          },
+          ...noteFields(),
+        }),
+        verification: ref('agentDiffVerification'),
+      },
+      ...noteFields(),
+    }),
+    agentDiffSettings: objectSchema({
+      required: ['maxRepeatedBlocks', 'failureMode', 'maxRemediationLoops', 'stateDir', 'repos'],
+      properties: {
+        maxRepeatedBlocks: ref('positiveInteger'),
+        failureMode: { enum: ['block', 'report-only'] },
+        maxRemediationLoops: ref('positiveInteger'),
+        locLargeMin: ref('positiveInteger'),
+        stateDir: ref('nonEmptyString'),
+        repos: arrayOf(ref('agentDiffRepo')),
+      },
+      ...noteFields(),
     }),
   };
 }
@@ -578,6 +680,23 @@ function validateInjectProtocol(config, errors) {
   pushIf(errors, typeof settings.output?.labels?.skills === 'string', 'inject-protocol output.labels.skills missing');
   pushIf(errors, typeof settings.output?.labels?.memory === 'string', 'inject-protocol output.labels.memory missing');
 
+  pushIf(errors, MEMORY_PROVIDER_ENUM.includes(memory.provider), `memory.provider must be one of: ${MEMORY_PROVIDER_ENUM.join(', ')}`);
+  pushIf(errors, memory.fallbackProvider === undefined || MEMORY_FALLBACK_PROVIDER_ENUM.includes(memory.fallbackProvider), `memory.fallbackProvider must be one of: ${MEMORY_FALLBACK_PROVIDER_ENUM.join(', ')}`);
+  pushIf(errors, memory.fallbackOnEmpty === undefined || typeof memory.fallbackOnEmpty === 'boolean', 'memory.fallbackOnEmpty must be boolean when present');
+  pushIf(errors, isObject(memory.hindsight), 'memory.hindsight must be an object');
+  if (isObject(memory.hindsight)) {
+    pushIf(errors, typeof memory.hindsight.endpoint === 'string' && /^https?:\/\//.test(memory.hindsight.endpoint), 'memory.hindsight.endpoint must be an http(s) URL');
+    pushIf(errors, typeof memory.hindsight.bankId === 'string' && memory.hindsight.bankId.length > 0, 'memory.hindsight.bankId missing');
+    pushIf(errors, memory.hindsight.tool === 'recall', 'memory.hindsight.tool must be recall');
+    pushIf(errors, positiveInteger(memory.hindsight.timeoutMs), 'memory.hindsight.timeoutMs invalid');
+    pushIf(errors, nonEmptyStringArray(memory.hindsight.requiredTools), 'memory.hindsight.requiredTools must be a non-empty string array');
+    if (Array.isArray(memory.hindsight.requiredTools)) {
+      for (const tool of HINDSIGHT_REQUIRED_TOOLS) {
+        pushIf(errors, memory.hindsight.requiredTools.includes(tool), `memory.hindsight.requiredTools missing ${tool}`);
+      }
+    }
+  }
+
   pushIf(errors, identifier(memory.ftsTable), 'memory.ftsTable must be a SQL identifier');
   pushIf(errors, identifier(memory.joinTable), 'memory.joinTable must be a SQL identifier');
   pushIf(errors, Array.isArray(memory.filters) && memory.filters.every((filter) => (
@@ -776,22 +895,83 @@ function validateQualityCompletionGate(config, errors) {
   pushIf(errors, nonEmptyStringArray(s.nonAuthority), 'quality-completion-gate settings.nonAuthority must be a non-empty string array');
 }
 
-function validateBrowserVerifyGate(config, errors) {
-  const hook = hookById(config, 'browser-verify-gate');
-  if (!isObject(hook)) return; // optional hook — validate only when present
-  pushIf(errors, hook.event === 'Stop', 'browser-verify-gate.event must be Stop');
-  pushIf(errors, hook.script?.path === 'browser-verify-gate/browser-verify-gate.py', 'browser-verify-gate.script.path mismatch');
-  const s = hook.settings || {};
-  pushIf(errors, identifier(s.table), 'browser-verify-gate settings.table must be a SQL identifier');
-  pushIf(errors, positiveInteger(s.minToolUses), 'browser-verify-gate settings.minToolUses invalid');
-  pushIf(errors, positiveInteger(s.maxRepeatedBlocks), 'browser-verify-gate settings.maxRepeatedBlocks invalid');
-  pushIf(errors, typeof s.requireSnapshot === 'boolean', 'browser-verify-gate settings.requireSnapshot must be boolean');
-  pushIf(errors, nonEmptyStringArray(s.navigatePatterns), 'browser-verify-gate settings.navigatePatterns must be a non-empty string array');
-  pushIf(errors, nonEmptyStringArray(s.inspectPatterns), 'browser-verify-gate settings.inspectPatterns must be a non-empty string array');
-  pushIf(errors, Array.isArray(s.relevantToolPatterns) && s.relevantToolPatterns.every((item) => typeof item === 'string' && item.length > 0), 'browser-verify-gate settings.relevantToolPatterns must be a string array');
-  pushIf(errors, nonEmptyStringArray(s.relevantTargetPatterns), 'browser-verify-gate settings.relevantTargetPatterns must be a non-empty string array');
-  const tel = hookById(config, 'hook-telemetry');
-  pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'browser-verify-gate.enabled requires hook-telemetry.enabled (it reads hook_events)');
+function hasPathMatcher(rule) {
+  return ['prefixes', 'contains', 'extensions', 'fileNames', 'segments']
+    .some((key) => Array.isArray(rule?.[key]) && rule[key].length > 0);
+}
+
+function validateAgentDiffPathRules(errors, paths, path) {
+  pushIf(errors, Array.isArray(paths) && paths.length > 0, `${path}.paths must be a non-empty array`);
+  if (!Array.isArray(paths)) return;
+  for (const [index, rule] of paths.entries()) {
+    const rulePath = `${path}.paths[${index}]`;
+    pushIf(errors, isObject(rule), `${rulePath} must be an object`);
+    if (!isObject(rule)) continue;
+    pushIf(errors, hasPathMatcher(rule), `${rulePath} must define a matcher`);
+    for (const key of ['prefixes', 'contains', 'extensions', 'fileNames', 'segments', 'excludePrefixes', 'excludeSegments', 'excludeContains']) {
+      pushIf(errors, rule[key] === undefined || nonEmptyStringArray(rule[key]), `${rulePath}.${key} must be a non-empty string array when present`);
+    }
+  }
+}
+
+function validateAgentDiffTrigger(errors, trigger, path) {
+  pushIf(errors, isObject(trigger), `${path}.trigger must be an object`);
+  if (!isObject(trigger)) return;
+  pushIf(errors, ADCG_TRIGGER_MODE_ENUM.includes(trigger.mode), `${path}.trigger.mode invalid`);
+  pushIf(errors, trigger.minChangedFiles === undefined || positiveInteger(trigger.minChangedFiles), `${path}.trigger.minChangedFiles invalid`);
+  pushIf(errors, trigger.minChangedLoc === undefined || positiveInteger(trigger.minChangedLoc), `${path}.trigger.minChangedLoc invalid`);
+
+  if (trigger.mode === 'files') {
+    pushIf(errors, positiveInteger(trigger.minChangedFiles), `${path}.trigger.minChangedFiles required for files mode`);
+  } else if (trigger.mode === 'loc') {
+    pushIf(errors, positiveInteger(trigger.minChangedLoc), `${path}.trigger.minChangedLoc required for loc mode`);
+  } else {
+    pushIf(
+      errors,
+      positiveInteger(trigger.minChangedFiles) || positiveInteger(trigger.minChangedLoc),
+      `${path}.trigger requires minChangedFiles or minChangedLoc`
+    );
+  }
+}
+
+function validateAgentDiffRepos(errors, repos) {
+  pushIf(errors, Array.isArray(repos), 'agent-diff-completion-gate settings.repos must be an array');
+  if (!Array.isArray(repos)) return;
+  for (const [repoIndex, repo] of repos.entries()) {
+    const path = `agent-diff-completion-gate settings.repos[${repoIndex}]`;
+    pushIf(errors, isObject(repo), `${path} must be an object`);
+    if (!isObject(repo)) continue;
+    pushIf(errors, typeof repo.name === 'string' && repo.name.length > 0, `${path}.name missing`);
+    pushIf(errors, typeof repo.root === 'string' && repo.root.length > 0, `${path}.root missing`);
+    pushIf(errors, typeof repo.enabled === 'boolean', `${path}.enabled must be boolean`);
+    if (repo.enabled === false) continue;
+
+    pushIf(errors, repo.extensions === undefined || nonEmptyStringArray(repo.extensions), `${path}.extensions must be a non-empty string array when present`);
+    pushIf(errors, repo.tiers?.largeLocMin === undefined || positiveInteger(repo.tiers.largeLocMin), `${path}.tiers.largeLocMin invalid`);
+    pushIf(errors, Array.isArray(repo.rules) && repo.rules.length > 0, `${path}.rules must be a non-empty array for enabled repos`);
+    if (Array.isArray(repo.rules)) {
+      for (const [ruleIndex, rule] of repo.rules.entries()) {
+        const rulePath = `${path}.rules[${ruleIndex}]`;
+        pushIf(errors, isObject(rule), `${rulePath} must be an object`);
+        if (!isObject(rule)) continue;
+        pushIf(errors, typeof rule.name === 'string' && rule.name.length > 0, `${rulePath}.name missing`);
+        pushIf(errors, rule.extensions === undefined || nonEmptyStringArray(rule.extensions), `${rulePath}.extensions must be a non-empty string array when present`);
+        validateAgentDiffPathRules(errors, rule.paths, rulePath);
+        validateAgentDiffTrigger(errors, rule.trigger, rulePath);
+      }
+    }
+
+    const verification = repo.verification;
+    pushIf(errors, isObject(verification), `${path}.verification must be an object for enabled repos`);
+    if (isObject(verification)) {
+      pushIf(errors, typeof verification.command === 'string' && verification.command.length > 0, `${path}.verification.command missing`);
+      pushIf(errors, positiveInteger(verification.timeoutMs), `${path}.verification.timeoutMs invalid`);
+      pushIf(errors, typeof verification.label === 'string' && verification.label.length > 0, `${path}.verification.label missing`);
+      pushIf(errors, typeof verification.verificationDir === 'string' && verification.verificationDir.length > 0, `${path}.verification.verificationDir missing`);
+      pushIf(errors, verification.requireLiveApi === undefined || typeof verification.requireLiveApi === 'boolean', `${path}.verification.requireLiveApi must be boolean when present`);
+      pushIf(errors, verification.requireFrontendLogin === undefined || typeof verification.requireFrontendLogin === 'boolean', `${path}.verification.requireFrontendLogin must be boolean when present`);
+    }
+  }
 }
 
 function validateAgentDiffCompletionGate(config, errors) {
@@ -801,11 +981,14 @@ function validateAgentDiffCompletionGate(config, errors) {
   pushIf(errors, hook.script?.path === 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', 'agent-diff-completion-gate.script.path mismatch');
   const s = hook.settings || {};
   pushIf(errors, positiveInteger(s.maxRepeatedBlocks), 'agent-diff-completion-gate settings.maxRepeatedBlocks invalid');
+  pushIf(errors, positiveInteger(s.maxRemediationLoops), 'agent-diff-completion-gate settings.maxRemediationLoops invalid');
+  pushIf(errors, s.locLargeMin === undefined || positiveInteger(s.locLargeMin), 'agent-diff-completion-gate settings.locLargeMin invalid');
   pushIf(
     errors,
     s.stateDir === undefined || (typeof s.stateDir === 'string' && s.stateDir.length > 0),
     'agent-diff-completion-gate settings.stateDir must be a non-empty string when present'
   );
+  validateAgentDiffRepos(errors, s.repos);
   const tel = hookById(config, 'hook-telemetry');
   pushIf(
     errors,
@@ -865,7 +1048,6 @@ export function validateConfig(config) {
   validateTaskModeGate(config, errors);
   validatePlanningStartGate(config, errors);
   validateQualityCompletionGate(config, errors);
-  validateBrowserVerifyGate(config, errors);
   validateAgentDiffCompletionGate(config, errors);
   validateStopCompletionChain(config, errors);
   validateFrontendDesignGate(config, errors);
