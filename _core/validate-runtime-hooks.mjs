@@ -66,6 +66,36 @@ function warningsForPaths(config) {
   return { warnings, errors };
 }
 
+function validateSkillIndexerRoots(config) {
+  const errors = [];
+  const warnings = [];
+  const warehouse = config.shared?.paths?.skillsWarehouse;
+  if (typeof warehouse === 'string' && warehouse.length > 0 && !existsSync(warehouse)) {
+    errors.push(`shared.paths.skillsWarehouse missing on disk: ${warehouse}`);
+  }
+
+  const script = (config.scripts || []).find((entry) => entry?.id === 'skill-indexer');
+  const roots = script?.settings?.scanRoots;
+  if (!Array.isArray(roots) || !roots.length) {
+    return { warnings, errors };
+  }
+
+  let existingCount = 0;
+  for (const root of roots) {
+    const path = root?.path;
+    if (typeof path !== 'string' || !path.length) continue;
+    if (existsSync(path)) {
+      existingCount += 1;
+    } else {
+      warnings.push(`skill-indexer scanRoot missing on disk: ${path}`);
+    }
+  }
+  if (script?.enabled !== false && existingCount === 0) {
+    errors.push('skill-indexer has no existing scanRoots on disk');
+  }
+  return { warnings, errors };
+}
+
 function cursorHookPaths(config) {
   const hooksDir = config.shared?.paths?.hooksDir || 'E:/hooks';
   const paths = [
@@ -250,6 +280,9 @@ function main() {
   const pathResult = warningsForPaths(config);
   warnings.push(...pathResult.warnings);
   errors.push(...pathResult.errors);
+  const skillRootResult = validateSkillIndexerRoots(config);
+  warnings.push(...skillRootResult.warnings);
+  errors.push(...skillRootResult.errors);
   errors.push(...validateCursorStopWiring(config));
   errors.push(...validateCodexStopWiring(config));
 

@@ -42,6 +42,8 @@ writeFileSync(runDir + '/report.json', JSON.stringify([{ status: 'ok', screensho
 writeFileSync(runDir + '/home.png', 'png');
 console.log('VERIFICATION_RUN_SUMMARY:' + JSON.stringify({ ok: true, runDir, timestamp: 'test' }));
 `);
+  git(repo, ['add', 'verify-live.mjs']);
+  git(repo, ['commit', '-m', 'add verifier']);
   return repo;
 }
 
@@ -101,11 +103,19 @@ function configFor(repo, policyOverrides = {}) {
 }
 
 function invoke(repo, config) {
-  const configPath = join(repo, 'config.json');
+  return invokeWithInput(repo, config, {
+    session_id: `session-${Date.now()}-${Math.random()}`,
+    cwd: repo,
+    hook_event_name: 'Stop',
+  });
+}
+
+function invokeWithInput(repo, config, input) {
+  const configPath = join(repo, '.git', 'agent-diff-test-config.json');
   writeJson(configPath, config);
   const result = spawnSync(process.execPath, [SCRIPT], {
     cwd: repo,
-    input: JSON.stringify({ session_id: `session-${Date.now()}-${Math.random()}`, cwd: repo, hook_event_name: 'Stop' }),
+    input: JSON.stringify(input),
     encoding: 'utf8',
     env: { ...process.env, HOOKS_CONFIG_PATH: configPath },
   });
@@ -157,6 +167,16 @@ withRepo((repo) => {
 withRepo((repo) => {
   write(repo, 'apps/web/a.ts', 'one\n');
   assertAllowed(invoke(repo, configFor(repo)), 'below file and LOC thresholds allows');
+});
+
+withRepo((repo) => {
+  const config = configFor(repo);
+  const stateDir = join(repo, '.state');
+  assertAllowed(
+    invokeWithInput(repo, config, { session_id: 'state-dir-session', cwd: repo, hook_event_name: 'Stop' }),
+    'clean repo allows',
+  );
+  assert.ok(existsSync(stateDir), 'agent-diff state must be written under configured settings.stateDir');
 });
 
 withRepo((repo) => {

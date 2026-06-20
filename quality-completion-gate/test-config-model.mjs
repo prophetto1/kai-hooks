@@ -174,6 +174,18 @@ assert.ok(
   'quality-completion-gate total budget must be positive'
 );
 
+const badSkillIndexerRoot = structuredClone(config);
+scriptById(badSkillIndexerRoot, 'skill-indexer').settings.scanRoots = [
+  { path: 'E:/other-skills', source: 'other', scope: 'all' },
+];
+const badSkillIndexerRootResult = validateConfig(badSkillIndexerRoot);
+assert.ok(
+  badSkillIndexerRootResult.errors.some((error) =>
+    error.includes('skill-indexer scanRoots must include shared.paths.skillsWarehouse')
+  ),
+  'skill-indexer must include the configured shared skills warehouse'
+);
+
 const badAgentDiffTriggerMode = structuredClone(config);
 hookById(badAgentDiffTriggerMode, 'agent-diff-completion-gate').settings.repos[0].rules[0].trigger.mode = 'files-xor-loc';
 const badAgentDiffTriggerModeResult = validateConfig(badAgentDiffTriggerMode);

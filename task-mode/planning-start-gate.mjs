@@ -7,6 +7,7 @@ import {
   MODE_REQUIRED_SKILLS,
   isMutatingTool,
   readState,
+  repoRootForCwd,
   skillCheckpoint,
   writeState,
 } from './task-mode-core.mjs';
@@ -34,13 +35,14 @@ function evaluate(input, runtime) {
   const sessionId = input.session_id || input.sessionId || '';
   const toolName = input.tool_name || '';
   const cwd = input.cwd || process.cwd();
+  const repoRoot = repoRootForCwd(cwd, runtime.shared?.runtime?.gitTimeoutMs);
 
   if (!sessionId || !toolName || !isMutatingTool(toolName)) {
     return { continue: true };
   }
 
   const settings = runtime.settings || {};
-  const state = readState(settings, sessionId, cwd);
+  const state = readState(settings, sessionId, repoRoot);
   const mode = state.mode || 'explore';
   const required = MODE_REQUIRED_SKILLS[mode] || [];
 
@@ -50,7 +52,7 @@ function evaluate(input, runtime) {
 
   const sinceId = Number(state.telemetryWatermark || 0);
   if (skillCheckpoint(sessionId, sinceId, runtime, mode)) {
-    writeState(settings, sessionId, cwd, { ...state, checkpointDone: true });
+    writeState(settings, sessionId, repoRoot, { ...state, checkpointDone: true });
     return { continue: true };
   }
 

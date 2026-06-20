@@ -128,6 +128,33 @@ def format_exchanges(
     return "\n\n".join(blocks)
 
 
+def format_existing_memories(existing_memories: list[dict[str, Any]], *, llm: dict[str, Any]) -> str:
+    if not existing_memories:
+        return ""
+    header = str(llm.get("existingMemoryHeader") or "Existing active memories:")
+    template = str(
+        llm.get("existingMemoryTemplate")
+        or "[{{index}}] id={{id}} type={{memory_type}} tags={{tags}} content={{content}}"
+    )
+    lines = [header.rstrip()]
+    for index, row in enumerate(existing_memories, start=1):
+        lines.append(
+            render_template(
+                template,
+                {
+                    "index": index,
+                    "id": row.get("id", ""),
+                    "content": row.get("content", ""),
+                    "memory_type": row.get("memory_type", ""),
+                    "tags": row.get("tags", ""),
+                    "confidence": row.get("confidence", ""),
+                    "created_at_iso": row.get("created_at_iso", ""),
+                },
+            ).rstrip()
+        )
+    return "\n".join(line for line in lines if line)
+
+
 def build_llm_prompts(
     exchanges: list[tuple[str, str]],
     *,
@@ -135,17 +162,49 @@ def build_llm_prompts(
     project: str,
     cwd: str,
     session_id: str,
+    existing_memories: list[dict[str, Any]] | None = None,
 ) -> tuple[str, str]:
     header = render_template(
         str(llm.get("userPromptHeader") or ""),
         {"project": project or "all", "cwd": cwd, "session_id": session_id or "anonymous"},
     ).rstrip()
     body = format_exchanges(exchanges, llm=llm, project=project, cwd=cwd, session_id=session_id)
+    memory_context = format_existing_memories(existing_memories or [], llm=llm)
     task = str(llm.get("taskPrompt") or "").strip()
-    parts = [part for part in (header, body, task) if part]
+    parts = [part for part in (header, memory_context, body, task) if part]
     user_prompt = "\n\n".join(parts)
     system_prompt = str(llm.get("systemPrompt") or "").strip()
     return system_prompt, user_prompt
+
+
+def _normalize_operation(value: Any) -> str:
+    operation = str(value or "insert").strip().lower()
+    aliases = {
+        "store": "insert",
+        "new": "insert",
+        "update": "supersede",
+        "contradiction": "supersede",
+        "drop": "skip",
+    }
+    return aliases.get(operation, operation)
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def parse_harvest_json(raw: str, *, allowed_memory_types: list[str] | None = None) -> list[dict[str, Any]]:
@@ -169,16 +228,32 @@ def parse_harvest_json(raw: str, *, allowed_memory_types: list[str] | None = Non
         if isinstance(item, str):
             content = item.strip()
             memory_type = ""
+            operation = "insert"
+            reason = ""
         elif isinstance(item, dict):
             content = str(item.get("content") or item.get("text") or "").strip()
             memory_type = str(item.get("memory_type") or item.get("type") or "").strip()
+            operation = _normalize_operation(item.get("operation") or item.get("action"))
+            reason = str(item.get("reason") or "").strip()
         else:
             continue
-        if not content:
+        if not content and operation != "skip":
             continue
-        row: dict[str, Any] = {"content": content}
+        row: dict[str, Any] = {"operation": operation, "content": content}
         if memory_type and (not allowed or memory_type.lower() in allowed):
             row["memory_type"] = memory_type
+        if reason:
+            row["reason"] = reason
+        if isinstance(item, dict):
+            evidence = str(item.get("evidence") or "").strip()
+            if evidence:
+                row["evidence"] = evidence
+            confidence = _float_or_none(item.get("confidence"))
+            if confidence is not None:
+                row["confidence"] = max(0.0, min(1.0, confidence))
+            supersedes_id = _int_or_none(item.get("supersedes_id") or item.get("supersedesId"))
+            if supersedes_id is not None:
+                row["supersedes_id"] = supersedes_id
         rows.append(row)
     return rows
 
@@ -257,6 +332,7 @@ def extract_candidates_llm(
     project: str,
     cwd: str,
     session_id: str,
+    existing_memories: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     ensure_meta = ensure_proxy_if_needed(llm)
     if ensure_meta.get("attempted") and not ensure_meta.get("ok"):
@@ -268,6 +344,7 @@ def extract_candidates_llm(
         project=project,
         cwd=cwd,
         session_id=session_id,
+        existing_memories=existing_memories or [],
     )
     response = call_chat_completions(llm, system_prompt=system_prompt, user_prompt=user_prompt)
     allowed = llm.get("allowedMemoryTypes")

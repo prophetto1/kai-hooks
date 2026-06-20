@@ -10,6 +10,39 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-19 - Add config-aware hook development QA
+
+- Fixed: Skill indexing now uses the live `E:/_skills` warehouse instead of the
+  stale `E:/__skills` path, with config-model and runtime validation to catch
+  future scan-root drift.
+- Added: `hook-dev-tools/test-hook.mjs` as a Windows-first, config-aware hook
+  development utility for sample event payloads, contract linting, and explicit
+  selected-hook execution.
+- Fixed: `task-mode` state is keyed by canonical git repo root and records a
+  prompt-time telemetry high-water mark so old same-session skill/thinking
+  events cannot satisfy later planning checkpoints.
+- Fixed: `agent-diff-completion-gate` now writes state under configured
+  `settings.stateDir` instead of the hardcoded fallback path.
+- Changed: `stop-completion-chain` now derives the enabled Stop sequence from
+  `scripts[id=stop-completion-chain].settings.chain` while preserving
+  memory-harvester as a fail-open pre-step.
+
+### 2026-06-19 - Add operation-based memory harvest admission
+
+- Added: deterministic `memory-harvester/eval-harvest-quality.py` replay harness
+  with labeled garbage, durable insert, duplicate, and correction/supersede
+  cases.
+- Changed: Spark harvester extraction now accepts operation-shaped rows
+  (`insert`, `skip`, `supersede`) with confidence, reason, evidence, and
+  `supersedes_id` fields instead of content-only candidates.
+- Added: `memory-harvester` retrieves related active SQLite memories before LLM
+  extraction and injects that context into the configured Spark prompt so the
+  model can choose skip or supersede instead of blindly appending.
+- Changed: Supersede operations insert the replacement memory and mark the old
+  active row with `superseded_by=<new_id>` in the same SQLite transaction.
+- Changed: Completion-gate manifest now compiles and runs the memory harvest
+  eval harness test.
+
 ### 2026-06-19 - Quality gate locks before preflight
 
 - Fixed: `quality-completion-gate` now acquires its per-repo single-flight lock

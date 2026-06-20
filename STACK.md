@@ -20,6 +20,7 @@ SQLite, Git-based diff inspection, and a few local helper services.
 | Memory integration | SQLite memory DB at `E:/_memory/memory-sqlite.db` plus optional Hindsight sync |
 | Migration utilities | `memory-sync/` backfill scripts for SQLite-to-Hindsight document migration |
 | Local service helpers | PowerShell scripts in `hindsight/` and `codex-proxy/` |
+| Hook development QA | `hook-dev-tools/test-hook.mjs` for sample payloads, contract linting, and explicit selected-hook execution |
 | Stop gating | `stop-completion-chain/`, `quality-completion-gate/`, `agent-diff-completion-gate/` |
 | Supported workspaces | `blockdata`, `kai-chattr`, `kai`, `writing-system`, `chattr`, `jwc-global`, `dbase` |
 | Runtime adapters | Codex and Claude stop-chain wiring, plus `adapters/cursor/` support |
@@ -53,6 +54,7 @@ SQLite, Git-based diff inspection, and a few local helper services.
 | --- | --- | --- |
 | Hooks DB | `E:/hooks/_db/hooks.db` | Read-only hook/runtime tests |
 | Memory DB | `E:/_memory/memory-sqlite.db` | Memory readonly tests |
+| Skill warehouse | `E:/_skills` | `python inject-protocol/index-skills.py --list` |
 | Hindsight MCP API | `http://127.0.0.1:10003/mcp/collective/` | `powershell -NoProfile -ExecutionPolicy Bypass -File E:\hooks\hindsight\verify-hindsight.ps1` |
 | Codex proxy API | `http://127.0.0.1:8787/v1` | `powershell -NoProfile -ExecutionPolicy Bypass -File E:\hooks\codex-proxy\verify-codex-proxy.ps1` |
 | Hook runtime scratch | `E:/hooks/.state/` | Inspect only when debugging runtime state |
@@ -73,6 +75,7 @@ requires it.
 | --- | --- |
 | Root docs only | `git diff --check -- <files>` and verify-manifest coverage if you add new root paths |
 | Config or hook wiring | `node _core/validate-runtime-hooks.mjs` |
+| Hook dev utility | `node hook-dev-tools/test-hook.mjs --self-test` |
 | Config model / schema | `node quality-completion-gate/test-config-model.mjs` |
 | Quality completion gate | `node quality-completion-gate/test-quality-gate-core.mjs` |
 | Agent-diff gate | `node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs` |

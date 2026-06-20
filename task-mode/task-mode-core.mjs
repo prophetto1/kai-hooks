@@ -76,6 +76,20 @@ export function normalizePath(value) {
   return String(value || '').trim().replaceAll('\\', '/');
 }
 
+export function repoRootForCwd(cwd, timeoutMs = 5000) {
+  const normalized = normalizePath(cwd || process.cwd());
+  try {
+    return normalizePath(execFileSync('git', ['-C', normalized, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: timeoutMs,
+      windowsHide: true,
+    }).trim());
+  } catch {
+    return normalized;
+  }
+}
+
 export function sessionKey(sessionId, repoRoot) {
   return createHash('sha256').update(JSON.stringify({ sessionId: sessionId || '', repoRoot: repoRoot || '' })).digest('hex');
 }
@@ -140,6 +154,34 @@ export function isMutatingTool(toolName) {
 
 export function hooksDbPath(runtime) {
   return runtime.shared?.paths?.hooksDb || 'E:/hooks/_db/hooks.db';
+}
+
+export function telemetryHighWatermark(sessionId, runtime) {
+  const dbPath = hooksDbPath(runtime);
+  if (!existsSync(dbPath) || !sessionId) return 0;
+
+  try {
+    const raw = execFileSync(
+      process.env.HOOKS_PYTHON || 'python',
+      [
+        '-c',
+        `
+import sqlite3, sys
+db, session_id = sys.argv[1], sys.argv[2]
+con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+row = con.execute("SELECT COALESCE(MAX(id), 0) FROM hook_events WHERE session_id=?", (session_id,)).fetchone()
+con.close()
+print(int(row[0] or 0))
+`,
+        dbPath,
+        sessionId,
+      ],
+      { encoding: 'utf8', timeout: 5000 },
+    ).trim();
+    return Number.parseInt(raw, 10) || 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function telemetryMatches(sessionId, sinceId, runtime, patterns) {

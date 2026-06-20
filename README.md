@@ -64,6 +64,7 @@ into hardcoded copies.
 | `stop-completion-chain/` | Canonical Stop orchestrator |
 | `hindsight/` | Local Hindsight service install/ensure/verify scripts |
 | `codex-proxy/` | Local Codex subscription proxy install/ensure/verify scripts |
+| `hook-dev-tools/` | Config-aware hook development payload, lint, and explicit selected-hook test utilities |
 | `adapters/` | Runtime-specific adapters such as Cursor hook shims |
 | `_db/`, `.state/` | Local hook state, telemetry DB, and transient runtime artifacts |
 
@@ -76,12 +77,14 @@ into hardcoded copies.
 | Hindsight MCP API | `http://127.0.0.1:10003/mcp/collective/` | Recovery owned by `hindsight/` |
 | Codex proxy API | `http://127.0.0.1:8787/v1` | Used by `memory-harvester` LLM extraction |
 | Skill catalog | `E:/hooks/skills-catalog.md` | Catalog for task-mode and planning guidance |
+| Skill warehouse | `E:/_skills` | Source scanned by the skill indexer, filtered by `skills-catalog.md` |
 
 ## Verification
 
 Start with the smallest check that covers the files you touched.
 
 - Runtime/config changes: `node _core/validate-runtime-hooks.mjs`
+- Hook development utility checks: `node hook-dev-tools/test-hook.mjs --self-test`
 - Config model or schema changes: `node quality-completion-gate/test-config-model.mjs`
 - Quality gate changes: `node quality-completion-gate/test-quality-gate-core.mjs`
 - Inject protocol changes: `node inject-protocol/test-inject-protocol-core.mjs`

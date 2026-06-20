@@ -775,8 +775,23 @@ function validateSkillIndexer(config, errors) {
   pushIf(errors, isObject(script), 'missing scripts[id=skill-indexer]');
   if (!isObject(script)) return;
   const settings = script.settings || {};
+  const warehouse = config.shared?.paths?.skillsWarehouse;
   pushIf(errors, script.script?.path === 'inject-protocol/index-skills.py', 'skill-indexer.script.path mismatch');
   pushIf(errors, Array.isArray(settings.scanRoots) && settings.scanRoots.length > 0, 'skill-indexer scanRoots missing');
+  if (Array.isArray(settings.scanRoots)) {
+    for (const [index, root] of settings.scanRoots.entries()) {
+      pushIf(errors, isObject(root), `skill-indexer scanRoots[${index}] must be an object`);
+      if (!isObject(root)) continue;
+      pushIf(errors, typeof root.path === 'string' && root.path.length > 0, `skill-indexer scanRoots[${index}].path invalid`);
+      pushIf(errors, typeof root.source === 'string' && root.source.length > 0, `skill-indexer scanRoots[${index}].source invalid`);
+      pushIf(errors, typeof root.scope === 'string' && root.scope.length > 0, `skill-indexer scanRoots[${index}].scope invalid`);
+    }
+    pushIf(
+      errors,
+      typeof warehouse !== 'string' || settings.scanRoots.some((root) => root?.path === warehouse),
+      'skill-indexer scanRoots must include shared.paths.skillsWarehouse'
+    );
+  }
   pushIf(errors, Array.isArray(settings.skipPathContains), 'skill-indexer skipPathContains invalid');
   pushIf(errors, JSON.stringify(settings.fts?.columns) === JSON.stringify(['name', 'description', 'content']), 'skill-indexer fts.columns must be name/description/content');
   pushIf(errors, typeof settings.curatedRegex === 'string', 'skill-indexer curatedRegex invalid');
@@ -1069,6 +1084,20 @@ function validateMemoryHarvester(config, errors) {
     );
   }
   pushIf(errors, positiveInteger(s.maxCandidatesPerStop), 'memory-harvester settings.maxCandidatesPerStop invalid');
+  if (s.existingMemoryContext !== undefined) {
+    const ctx = s.existingMemoryContext;
+    pushIf(errors, isObject(ctx), 'memory-harvester settings.existingMemoryContext must be an object');
+    if (isObject(ctx)) {
+      pushIf(
+        errors,
+        ctx.enabled === undefined || typeof ctx.enabled === 'boolean',
+        'memory-harvester settings.existingMemoryContext.enabled must be boolean when present'
+      );
+      pushIf(errors, positiveInteger(ctx.max), 'memory-harvester settings.existingMemoryContext.max invalid');
+      pushIf(errors, positiveInteger(ctx.snippetChars), 'memory-harvester settings.existingMemoryContext.snippetChars invalid');
+      pushIf(errors, positiveInteger(ctx.minTerms), 'memory-harvester settings.existingMemoryContext.minTerms invalid');
+    }
+  }
   pushIf(
     errors,
     s.stateDir === undefined || (typeof s.stateDir === 'string' && s.stateDir.length > 0),

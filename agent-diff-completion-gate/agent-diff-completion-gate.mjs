@@ -57,9 +57,13 @@ function hash(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
 
-function statePath(sessionId, repoRoot) {
+function stateDir(settings = {}) {
+  return settings.stateDir || DEFAULT_STATE_DIR;
+}
+
+function statePath(settings, sessionId, repoRoot) {
   const key = hash({ sessionId: sessionId || '', repoRoot: repoRoot || '' });
-  return join(DEFAULT_STATE_DIR, `${key}.json`);
+  return join(stateDir(settings), `${key}.json`);
 }
 
 function readState(path) {
@@ -616,7 +620,7 @@ function evaluate(input, runtime) {
 
   const filesResult = changedFiles(repoRoot, gitTimeout);
   if (!filesResult.ok || !filesResult.value.length) {
-    writeState(statePath(sessionId, repoRoot), {});
+    writeState(statePath(settings, sessionId, repoRoot), {});
     return { continue: true };
   }
 
@@ -632,7 +636,7 @@ function evaluate(input, runtime) {
     loc: loc.total,
     triggeredRules: triggeredRules.map((item) => item.name),
   });
-  const stateFile = statePath(sessionId, repoRoot);
+  const stateFile = statePath(settings, sessionId, repoRoot);
   const state = readState(stateFile);
   const sameDiff = state.diffSignature === diffSignature;
 

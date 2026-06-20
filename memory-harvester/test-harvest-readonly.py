@@ -21,9 +21,11 @@ from harvest_core import (  # noqa: E402
     count_transcript_exchanges,
     exchange_count,
     harvest_session,
+    load_existing_memory_context,
     recent_exchanges,
     parse_transcript_lines,
     read_text_tail,
+    store_candidates,
 )
 
 
@@ -104,6 +106,48 @@ def write_transcript(path: str, count: int, *, assistant_padding_chars: int = 0)
     Path(path).write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
 
 
+def insert_raw_memory(
+    db_path: str,
+    content: str,
+    *,
+    tags: str = "kai-chattr,all",
+    memory_type: str = "decision",
+    deleted_at: float | None = None,
+    superseded_by: str | None = None,
+) -> int:
+    con = sqlite3.connect(db_path)
+    try:
+        cur = con.execute(
+            """
+            INSERT INTO memories (
+                content_hash, content, tags, memory_type, metadata,
+                created_at, updated_at, created_at_iso, updated_at_iso,
+                confidence, deleted_at, superseded_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"raw-{abs(hash((content, tags, deleted_at, superseded_by)))}",
+                content,
+                tags,
+                memory_type,
+                "{}",
+                1000.0,
+                1000.0,
+                "1970-01-01T00:16:40Z",
+                "1970-01-01T00:16:40Z",
+                0.9,
+                deleted_at,
+                superseded_by,
+            ),
+        )
+        row_id = int(cur.lastrowid)
+        con.execute("INSERT INTO memory_content_fts(rowid, content) VALUES (?, ?)", (row_id, content))
+        con.commit()
+        return row_id
+    finally:
+        con.close()
+
+
 def test_parse_and_exchange() -> None:
     raw = read_text_tail(str(HOOK_DIR / "fixtures" / "sample-transcript.jsonl"), 65536)
     messages = parse_transcript_lines(raw)
@@ -143,6 +187,102 @@ def test_harvest_writes_once() -> None:
             con.close()
         assert active >= 1
         assert fts >= 1
+
+
+def test_existing_memory_context_returns_active_scoped_rows() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = os.path.join(temp_dir, "memory.db")
+        state_dir = os.path.join(temp_dir, "state")
+        create_memory_db(db_path)
+        active_id = insert_raw_memory(
+            db_path,
+            "Decision: Hindsight is not primary until SQLite backfill is complete.",
+            tags="kai-chattr,all",
+        )
+        insert_raw_memory(
+            db_path,
+            "Decision: Deleted memories should not be shown.",
+            tags="kai-chattr,all",
+            deleted_at=123.0,
+        )
+        insert_raw_memory(
+            db_path,
+            "Decision: Superseded memories should not be shown.",
+            tags="kai-chattr,all",
+            superseded_by="999",
+        )
+        insert_raw_memory(
+            db_path,
+            "Decision: Other project memories should not be shown.",
+            tags="blockdata",
+        )
+        config = base_config(db_path, state_dir)
+        settings = {
+            "existingMemoryContext": {
+                "enabled": True,
+                "max": 4,
+                "snippetChars": 160,
+                "minTerms": 1,
+            }
+        }
+
+        rows = load_existing_memory_context(
+            [("memory correction", "SQLite backfill means Hindsight is not primary yet.")],
+            config=config,
+            settings=settings,
+            project="kai-chattr",
+        )
+
+        assert [row["id"] for row in rows] == [active_id]
+        assert rows[0]["content"].startswith("Decision: Hindsight")
+        assert rows[0]["memory_type"] == "decision"
+
+
+def test_store_candidates_applies_skip_and_supersede_operations() -> None:
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = os.path.join(temp_dir, "memory.db")
+        state_dir = os.path.join(temp_dir, "state")
+        create_memory_db(db_path)
+        old_id = insert_raw_memory(
+            db_path,
+            "Decision: Hindsight is primary memory recall.",
+            tags="kai-chattr,all",
+        )
+        config = base_config(db_path, state_dir)
+        stored_rows, skipped_rows, rejected_rows, _ = store_candidates(
+            [
+                {"operation": "skip", "reason": "too_generic", "content": ""},
+                {
+                    "operation": "supersede",
+                    "content": "Decision: SQLite/vector remains primary until Hindsight backfill is complete.",
+                    "memory_type": "decision",
+                    "reason": "User corrected the previous memory provider direction.",
+                    "evidence": "SQLite/vector is primary until Hindsight is backfilled.",
+                    "supersedes_id": old_id,
+                    "confidence": 0.94,
+                },
+            ],
+            config=config,
+            cwd="E:/kai-chattr",
+            session_id="operation-test",
+            extraction_meta={"extractionMode": "llm", "llmModel": "spark-test"},
+        )
+
+        assert not rejected_rows
+        assert len(skipped_rows) == 1
+        assert skipped_rows[0]["reason"] == "too_generic"
+        assert len(stored_rows) == 1
+        new_id = stored_rows[0]["memoryId"]
+
+        con = sqlite3.connect(db_path)
+        try:
+            old = con.execute("SELECT superseded_by FROM memories WHERE id = ?", (old_id,)).fetchone()
+            active = con.execute(f"SELECT id, confidence FROM memories WHERE {ACTIVE_SQL}").fetchall()
+        finally:
+            con.close()
+
+        assert old[0] == str(new_id)
+        assert active == [(new_id, 0.94)]
 
 
 def test_harvest_waits_for_exchange_interval() -> None:
@@ -228,9 +368,11 @@ def test_cadence_uses_full_transcript_count_when_tail_is_small() -> None:
 def main() -> int:
     test_parse_and_exchange()
     test_harvest_writes_once()
+    test_existing_memory_context_returns_active_scoped_rows()
+    test_store_candidates_applies_skip_and_supersede_operations()
     test_harvest_waits_for_exchange_interval()
     test_cadence_uses_full_transcript_count_when_tail_is_small()
-    print(json.dumps({"ok": True, "tests": 4}, ensure_ascii=True))
+    print(json.dumps({"ok": True, "tests": 6}, ensure_ascii=True))
     return 0
 
 

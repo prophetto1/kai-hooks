@@ -20,6 +20,7 @@ from memory_retain import (  # noqa: E402 — sibling import via harvest-stop sy
 
 ACTIVE_SQL = "deleted_at IS NULL AND (superseded_by IS NULL OR superseded_by='')"
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+TERM_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
 HARVEST_SIGNALS = (
     "decision",
     "why:",
@@ -188,6 +189,23 @@ def clip(text: str, limit: int) -> str:
     return cleaned[: limit - 3].rsplit(" ", 1)[0] + "..."
 
 
+def clamp_confidence(value: Any, default: float = 0.85) -> float:
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        score = default
+    return max(0.0, min(1.0, score))
+
+
+def int_or_none(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def sentence_has_signal(text: str) -> bool:
     lowered = text.lower()
     return any(signal in lowered for signal in HARVEST_SIGNALS)
@@ -287,6 +305,103 @@ def connect_memory(db_path: str) -> sqlite3.Connection:
     return con
 
 
+def existing_memory_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    raw = settings.get("existingMemoryContext")
+    if not isinstance(raw, dict):
+        return {"enabled": False}
+    merged = dict(raw)
+    merged.setdefault("enabled", True)
+    merged.setdefault("max", 8)
+    merged.setdefault("snippetChars", 600)
+    merged.setdefault("minTerms", 2)
+    return merged
+
+
+def context_terms(exchanges: list[tuple[str, str]], *, config: dict[str, Any], limit: int = 12) -> list[str]:
+    stopwords = set(str(config.get("shared", {}).get("stopwords") or "").lower().split())
+    seen: set[str] = set()
+    terms: list[str] = []
+    text = " ".join(part for exchange in exchanges for part in exchange)
+    for match in TERM_RE.finditer(text.lower()):
+        term = match.group(0).strip("_-")
+        if not term or term in stopwords or term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+        if len(terms) >= limit:
+            break
+    return terms
+
+
+def quote_fts_term(term: str) -> str:
+    return '"' + term.replace('"', '""') + '"'
+
+
+def project_filter_sql(project: str, cross_project_tag: str) -> tuple[str, list[str]]:
+    if not project:
+        return "", []
+    return "AND (','||coalesce(m.tags,'')||',' LIKE ? OR ','||coalesce(m.tags,'')||',' LIKE ?) ", [
+        f"%,{project},%",
+        f"%,{cross_project_tag},%",
+    ]
+
+
+def load_existing_memory_context(
+    exchanges: list[tuple[str, str]],
+    *,
+    config: dict[str, Any],
+    settings: dict[str, Any],
+    project: str,
+) -> list[dict[str, Any]]:
+    ctx = existing_memory_settings(settings)
+    if ctx.get("enabled") is False:
+        return []
+
+    terms = context_terms(exchanges, config=config)
+    min_terms = int(ctx.get("minTerms", 2))
+    if len(terms) < min_terms:
+        return []
+
+    db_path = config.get("shared", {}).get("paths", {}).get("memoryDb", "E:/_memory/memory-sqlite.db")
+    if not Path(db_path).is_file():
+        return []
+
+    max_rows = int(ctx.get("max", 8))
+    snippet_chars = int(ctx.get("snippetChars", 600))
+    cross_tag = config.get("shared", {}).get("memoryTags", {}).get("crossProjectTag", "all")
+    scope_sql, scope_params = project_filter_sql(project, cross_tag)
+    match_query = " OR ".join(quote_fts_term(term) for term in terms)
+    rows: list[dict[str, Any]] = []
+
+    con = sqlite3.connect(f"file:{Path(db_path).as_posix()}?mode=ro", uri=True, timeout=5.0)
+    try:
+        con.execute("PRAGMA busy_timeout=5000")
+        sql = (
+            "SELECT m.id, m.content, m.tags, m.memory_type, m.created_at_iso, m.confidence, rank "
+            "FROM memory_content_fts f JOIN memories m ON m.id=f.rowid "
+            f"WHERE f.memory_content_fts MATCH ? AND {ACTIVE_SQL} "
+            f"{scope_sql}"
+            "ORDER BY rank LIMIT ?"
+        )
+        params: list[Any] = [match_query, *scope_params, max_rows]
+        for row in con.execute(sql, params).fetchall():
+            rows.append(
+                {
+                    "id": int(row[0]),
+                    "content": clip(str(row[1] or ""), snippet_chars),
+                    "tags": str(row[2] or ""),
+                    "memory_type": str(row[3] or ""),
+                    "created_at_iso": str(row[4] or ""),
+                    "confidence": row[5],
+                }
+            )
+    except sqlite3.Error:
+        return []
+    finally:
+        con.close()
+    return rows
+
+
 def insert_memory(
     con: sqlite3.Connection,
     retain: dict[str, Any],
@@ -303,11 +418,15 @@ def insert_memory(
         return {"decision": "skip", "reason": "duplicate", "memoryId": existing[0], "contentHash": content_hash}
 
     metadata = dict(retain.get("metadata") or {})
-    metadata["memory_harvester"] = {
+    harvester_meta = {
         "version": "v1",
         "session_id": session_id,
         "harvested_at": utc_iso(),
     }
+    for key in ("operation", "reason", "evidence", "supersedes_id"):
+        if retain.get(key) not in (None, ""):
+            harvester_meta[key] = retain[key]
+    metadata["memory_harvester"] = harvester_meta
     now = float(retain.get("created_at") or time.time())
     tags = tags_to_string(retain["tags"], config)
     cur = con.execute(
@@ -327,7 +446,7 @@ def insert_memory(
             now,
             retain.get("created_at_iso") or utc_iso(now),
             retain.get("created_at_iso") or utc_iso(now),
-            0.85,
+            clamp_confidence(retain.get("confidence"), 0.85),
         ),
     )
     row_id = cur.lastrowid
@@ -391,6 +510,7 @@ def collect_extraction_candidates(
     project: str,
     cwd: str,
     session_id: str,
+    existing_memories: list[dict[str, Any]] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     extraction = extraction_settings(settings)
     mode = str(extraction.get("mode") or "heuristic").lower()
@@ -413,6 +533,7 @@ def collect_extraction_candidates(
                     project=project,
                     cwd=cwd,
                     session_id=session_id,
+                    existing_memories=existing_memories or [],
                 )
                 meta.update(
                     {
@@ -432,7 +553,7 @@ def collect_extraction_candidates(
                 meta["fallbackReason"] = str(exc)
 
     heuristic_rows = [
-        {"content": text}
+        {"operation": "insert", "content": text}
         for text in collect_heuristic_candidates(
             exchanges,
             project=project,
@@ -441,6 +562,27 @@ def collect_extraction_candidates(
         )
     ]
     return heuristic_rows, meta
+
+
+def normalize_candidate_operation(row: dict[str, Any]) -> str:
+    operation = str(row.get("operation") or row.get("action") or "insert").strip().lower()
+    aliases = {
+        "store": "insert",
+        "new": "insert",
+        "update": "supersede",
+        "contradiction": "supersede",
+        "drop": "skip",
+    }
+    return aliases.get(operation, operation)
+
+
+def mark_superseded(con: sqlite3.Connection, *, old_id: int, new_id: int) -> bool:
+    now = time.time()
+    cur = con.execute(
+        f"UPDATE memories SET superseded_by = ?, updated_at = ?, updated_at_iso = ? WHERE id = ? AND {ACTIVE_SQL}",
+        (str(new_id), now, utc_iso(now), old_id),
+    )
+    return cur.rowcount > 0
 
 
 def store_candidates(
@@ -464,8 +606,23 @@ def store_candidates(
     con = connect_memory(db_path)
     try:
         for row in candidate_rows:
+            operation = normalize_candidate_operation(row)
+            if operation == "skip":
+                skipped_rows.append(
+                    {
+                        "decision": "skip",
+                        "operation": "skip",
+                        "reason": str(row.get("reason") or "llm_skip"),
+                    }
+                )
+                continue
             content = str(row.get("content") or "").strip()
             if not content:
+                skipped_rows.append({"decision": "skip", "operation": operation, "reason": "empty_content"})
+                continue
+            supersedes_id = int_or_none(row.get("supersedes_id") or row.get("supersedesId"))
+            if operation == "supersede" and supersedes_id is None:
+                rejected_rows.append({"contentPreview": clip(content, 120), "reason": "missing_supersedes_id"})
                 continue
             metadata = {
                 "harvest_source": "stop-hook",
@@ -484,11 +641,26 @@ def store_candidates(
                 )
                 if row.get("memory_type"):
                     retain["memory_type"] = str(row["memory_type"])
+                retain["operation"] = operation
+                if row.get("reason"):
+                    retain["reason"] = str(row["reason"])
+                if row.get("evidence"):
+                    retain["evidence"] = str(row["evidence"])
+                if supersedes_id is not None:
+                    retain["supersedes_id"] = supersedes_id
+                if row.get("confidence") is not None:
+                    retain["confidence"] = clamp_confidence(row.get("confidence"))
             except MemoryQualityError as exc:
                 rejected_rows.append({"contentPreview": clip(content, 120), "reason": str(exc)})
                 continue
             outcome = insert_memory(con, retain, config=config, session_id=session_id)
             if outcome["decision"] == "stored":
+                outcome["operation"] = operation
+                if supersedes_id is not None:
+                    if mark_superseded(con, old_id=supersedes_id, new_id=int(outcome["memoryId"])):
+                        outcome["supersededMemoryId"] = supersedes_id
+                    else:
+                        outcome["supersedeWarning"] = "target_not_active"
                 stored_rows.append(outcome)
                 stored_pairs.append((outcome, retain))
             else:
@@ -563,13 +735,22 @@ def harvest_session(
 
     max_candidates = int(settings.get("maxCandidatesPerStop", 6))
     try:
+        existing_memories = load_existing_memory_context(
+            exchanges,
+            config=config,
+            settings=settings,
+            project=project,
+        )
         candidate_rows, extraction_meta = collect_extraction_candidates(
             exchanges,
             settings=settings,
             project=project,
             cwd=cwd,
             session_id=session_id,
+            existing_memories=existing_memories,
         )
+        if existing_memories:
+            extraction_meta["existingMemoryContext"] = {"count": len(existing_memories)}
     except Exception as exc:
         return {
             "decision": "skip",

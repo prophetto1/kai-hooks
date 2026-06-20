@@ -7,6 +7,8 @@ import {
   classifyMode,
   modeInjectionBlock,
   parseExplicitMode,
+  repoRootForCwd,
+  telemetryHighWatermark,
   writeState,
 } from './task-mode-core.mjs';
 import { hookRuntime, readJsonStdin, writeJson } from '../quality-completion-gate/quality-gate-core.mjs';
@@ -26,16 +28,17 @@ function evaluate(input, runtime) {
 
   const sessionId = input.session_id || input.sessionId || input.conversation_id || '';
   const cwd = input.cwd || process.cwd();
+  const repoRoot = repoRootForCwd(cwd, runtime.shared?.runtime?.gitTimeoutMs);
   const prompt = promptText(input);
   const mode = classifyMode(prompt);
   const explicit = Boolean(parseExplicitMode(prompt));
 
-  writeState(runtime.settings || {}, sessionId, cwd, {
+  writeState(runtime.settings || {}, sessionId, repoRoot, {
     mode,
     explicit,
     promptSnippet: String(prompt).slice(0, 240),
     classifiedAt: new Date().toISOString(),
-    telemetryWatermark: 0,
+    telemetryWatermark: telemetryHighWatermark(sessionId, runtime),
     checkpointDone: false,
   });
 

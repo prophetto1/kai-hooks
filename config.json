@@ -10,7 +10,7 @@
       "hooksDb": "E:/hooks/_db/hooks.db",
       "skillsCatalog": "E:/hooks/skills-catalog.md",
       "qualityVerifyManifest": "E:/hooks/quality-completion-gate/quality-verify-manifest.json",
-      "skillsWarehouse": "E:/__skills",
+      "skillsWarehouse": "E:/_skills",
       "python": "python"
     },
     "runtime": {
@@ -29,7 +29,7 @@
       { "slug": "jwc-global",     "kind": "legacy",  "repoPath": "E:/jwc-global",     "aliases": [] },
       { "slug": "dbase",          "kind": "legacy",  "repoPath": "E:/dbase",          "aliases": [] }
     ],
-    "_projectsNote": "ONE model replacing divergent hardcoded project lists. Derive: detection slugs = slug + aliases; recall scope = matched-slug + 'all'; rebuild set (= tag-normalizer ACTIVE, gov-gate scope) = kind=='rebuild'; PROJECT set = all slugs + 'all'. Skill indexing is intentionally separate: E:/__skills warehouse + skills-catalog.md allowlist only.",
+    "_projectsNote": "ONE model replacing divergent hardcoded project lists. Derive: detection slugs = slug + aliases; recall scope = matched-slug + 'all'; rebuild set (= tag-normalizer ACTIVE, gov-gate scope) = kind=='rebuild'; PROJECT set = all slugs + 'all'. Skill indexing is intentionally separate: E:/_skills warehouse + skills-catalog.md allowlist only.",
 
     "memoryTags": {
       "crossProjectTag": "all",
@@ -283,6 +283,13 @@
         "reviewLastExchanges": 4,
         "runAfterNewExchanges": 4,
         "maxCandidatesPerStop": 6,
+        "existingMemoryContext": {
+          "_doc": "Before Spark decides what to retain, retrieve related active SQLite memories so it can emit insert/skip/supersede operations instead of blindly appending rows.",
+          "enabled": true,
+          "max": 8,
+          "snippetChars": 600,
+          "minTerms": 2
+        },
         "extraction": {
           "_doc": "mode=llm sends one prompt to the local Codex proxy; mode=heuristic uses keyword rules. On LLM failure, fallbackMode controls whether heuristic runs.",
           "mode": "llm",
@@ -304,10 +311,12 @@
             "maxItemsPerStop": 6,
             "exchangeOrder": "oldest-first",
             "allowedMemoryTypes": ["decision", "mistake", "reference", "learning", "planning"],
-            "systemPrompt": "You extract durable memory facts from agent session transcripts. Return ONLY a JSON array. Each item must be an object with \"content\" (string) and optional \"memory_type\" (decision|mistake|reference|learning|planning). Skip greetings, acknowledgements, and one-off task chatter. If nothing is worth long-term recall, return []. No markdown fences or prose outside the JSON array.",
+            "systemPrompt": "You extract durable memory operations from agent session transcripts. Return ONLY a JSON array. Each item must be an object with \"operation\" (insert|skip|supersede), \"content\" (string, empty only for skip), optional \"memory_type\" (decision|mistake|reference|learning|planning), optional \"confidence\" (0..1), optional \"reason\", optional \"evidence\", and optional \"supersedes_id\" for supersede. Skip greetings, acknowledgements, one-off task chatter, and facts already represented by existing memories. No markdown fences or prose outside the JSON array.",
             "userPromptHeader": "Project: {{project}}\nWorkspace: {{cwd}}\nSession: {{session_id}}",
+            "existingMemoryHeader": "Existing active memories that may already cover or conflict with the transcript:",
+            "existingMemoryTemplate": "[{{index}}] id={{id}} type={{memory_type}} tags={{tags}} confidence={{confidence}} content={{content}}",
             "exchangeTemplate": "--- Exchange {{index}} ---\nUser: {{user_text}}\nAssistant: {{assistant_text}}",
-            "taskPrompt": "From the exchanges above, extract durable facts worth recalling in future sessions: decisions, rules, corrections (wrong/right), canonical paths, architecture choices, and non-obvious project state. Prefer explicit Decision/Why/Wrong/Right phrasing when present."
+            "taskPrompt": "From the exchanges above, decide memory operations worth applying. Use insert for genuinely new durable facts. Use skip with a reason for garbage, generic chatter, or facts already represented. Use supersede when the transcript corrects or replaces an existing active memory; set supersedes_id to the existing memory id. Prefer explicit Decision/Why/Wrong/Right phrasing when present."
           },
           "heuristic": {
             "_doc": "Keyword fallback when extraction.mode=heuristic or LLM fails and fallbackMode=heuristic.",
@@ -527,6 +536,22 @@
     },
 
     {
+      "id": "hook-dev-test-runner",
+      "name": "Hook Development Test Runner",
+      "description": "Config-aware hook development utility borrowed from hook-development patterns. Generates sample event payloads, lints hook config/script contracts, and only executes a selected hook when --hook is explicitly provided.",
+      "category": "maintenance",
+      "trigger": "manual",
+      "script": { "path": "hook-dev-tools/test-hook.mjs", "runtime": "node" },
+      "enabled": true,
+      "settings": {
+        "defaultTimeoutMs": 30000,
+        "safeDefault": "lint-and-sample-only",
+        "executeRequiresHookId": true,
+        "sampleEvents": ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "PreCompact", "PostCompact"]
+      }
+    },
+
+    {
       "id": "skill-indexer",
       "name": "Skill Indexer",
       "description": "Rebuilds skills/skills_fts in the memory DB from on-disk SKILL.md files. Derived mirror — full rebuild, no stale rows. Run manually after adding/editing/removing skills.",
@@ -536,7 +561,7 @@
       "enabled": true,
       "settings": {
         "scanRoots": [
-          { "path": "E:/__skills", "source": "warehouse", "scope": "all" }
+          { "path": "E:/_skills", "source": "warehouse", "scope": "all" }
         ],
         "skipPathContains": [".backup"],
         "fts": { "columns": ["name", "description", "content"] },
