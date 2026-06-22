@@ -9,54 +9,164 @@
       "domains": {
         "contracts": {
           "paths": [
-            { "prefixes": ["contracts/", "governance/"] },
-            { "contains": ["/contract"] },
-            { "prefixes": ["scripts/tests/"] }
+            {
+              "prefixes": [
+                "contracts/",
+                "governance/"
+              ]
+            },
+            {
+              "contains": [
+                "/contract"
+              ]
+            },
+            {
+              "prefixes": [
+                "scripts/tests/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "writing-system contract CI", "command": "pnpm run ci:contracts", "timeoutMs": 120000 }
+            {
+              "label": "writing-system contract CI",
+              "command": "pnpm run ci:contracts",
+              "timeoutMs": 120000,
+              "id": "writing-system-contract-ci",
+              "classes": [
+                "config",
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "frontend": {
           "paths": [
-            { "prefixes": ["web/"] },
-            { "extensions": [".tsx", ".jsx", ".css"], "segments": ["web", "src"] }
+            {
+              "prefixes": [
+                "web/"
+              ]
+            },
+            {
+              "extensions": [
+                ".tsx",
+                ".jsx",
+                ".css"
+              ],
+              "segments": [
+                "web",
+                "src"
+              ]
+            }
           ],
           "commands": [
-            { "label": "writing-system frontend build", "command": "pnpm run ci:frontend", "timeoutMs": 120000 },
-            { "label": "writing-system web tests", "command": "pnpm run ci:web", "timeoutMs": 120000 }
+            {
+              "label": "writing-system frontend build",
+              "command": "pnpm run ci:frontend",
+              "timeoutMs": 120000,
+              "id": "writing-system-frontend-build",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "writing-system web tests",
+              "command": "pnpm run ci:web",
+              "timeoutMs": 120000,
+              "id": "writing-system-web-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "devdocs": {
           "paths": [
-            { "prefixes": ["apps/devdocs/"] }
+            {
+              "prefixes": [
+                "apps/devdocs/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "writing-system devdocs build", "command": "pnpm run ci:devdocs", "timeoutMs": 120000 }
+            {
+              "label": "writing-system devdocs build",
+              "command": "pnpm run ci:devdocs",
+              "timeoutMs": 120000,
+              "id": "writing-system-devdocs-build",
+              "classes": [
+                "docs",
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "backend": {
           "paths": [
-            { "prefixes": ["services/platform-api/"] }
+            {
+              "prefixes": [
+                "services/platform-api/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "writing-system platform-api tests", "command": "pnpm run ci:platform-api", "timeoutMs": 180000 }
+            {
+              "label": "writing-system platform-api tests",
+              "command": "pnpm run ci:platform-api",
+              "timeoutMs": 180000,
+              "id": "writing-system-platform-api-tests",
+              "classes": [
+                "full-suite",
+                "quality"
+              ]
+            }
           ]
         },
         "database": {
           "paths": [
-            { "prefixes": ["supabase/migrations/"] }
+            {
+              "prefixes": [
+                "supabase/migrations/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "writing-system supabase migration guardrails", "command": "pnpm run test:supabase-migration-guardrails", "timeoutMs": 120000 }
+            {
+              "label": "writing-system supabase migration guardrails",
+              "command": "pnpm run test:supabase-migration-guardrails",
+              "timeoutMs": 120000,
+              "id": "writing-system-supabase-migration-guardrails",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "secrets": {
           "paths": [
-            { "prefixes": ["secrets/", "tools/secrets/"] }
+            {
+              "prefixes": [
+                "secrets/",
+                "tools/secrets/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "writing-system plaintext secret scan", "command": "pnpm run secrets:check", "timeoutMs": 120000 }
+            {
+              "label": "writing-system plaintext secret scan",
+              "command": "pnpm run secrets:check",
+              "timeoutMs": 120000,
+              "id": "writing-system-plaintext-secret-scan",
+              "classes": [
+                "security",
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         }
       }
@@ -68,37 +178,118 @@
       "domains": {
         "governance": {
           "paths": [
-            { "prefixes": ["governance/"] }
+            {
+              "prefixes": [
+                "governance/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "blockdata contracts", "command": "node governance/scripts/check-contracts.mjs", "timeoutMs": 60000 },
-            { "label": "blockdata npm deps", "command": "node governance/scripts/check-deps.mjs", "timeoutMs": 60000 },
-            { "label": "blockdata python deps", "command": "python governance/scripts/check-python-deps.py", "timeoutMs": 60000 }
+            {
+              "label": "blockdata contracts",
+              "command": "node governance/scripts/check-contracts.mjs",
+              "timeoutMs": 60000,
+              "id": "blockdata-contracts",
+              "classes": [
+                "config",
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "blockdata npm deps",
+              "command": "node governance/scripts/check-deps.mjs",
+              "timeoutMs": 60000,
+              "id": "blockdata-npm-deps",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "blockdata python deps",
+              "command": "python governance/scripts/check-python-deps.py",
+              "timeoutMs": 60000,
+              "id": "blockdata-python-deps",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "backend": {
           "paths": [
-            { "prefixes": ["services/api/"] }
+            {
+              "prefixes": [
+                "services/api/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "blockdata python deps", "command": "python governance/scripts/check-python-deps.py", "timeoutMs": 60000 },
-            { "label": "blockdata openapi", "command": "node governance/scripts/check-openapi.mjs", "timeoutMs": 60000 }
+            {
+              "label": "blockdata python deps",
+              "command": "python governance/scripts/check-python-deps.py",
+              "timeoutMs": 60000,
+              "id": "blockdata-python-deps-2",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "blockdata openapi",
+              "command": "node governance/scripts/check-openapi.mjs",
+              "timeoutMs": 60000,
+              "id": "blockdata-openapi",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "devdocs": {
           "paths": [
-            { "prefixes": ["apps/devdocs/"] }
+            {
+              "prefixes": [
+                "apps/devdocs/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "blockdata devdocs build", "command": "pnpm --dir apps/devdocs run build", "timeoutMs": 180000 }
+            {
+              "label": "blockdata devdocs build",
+              "command": "pnpm --dir apps/devdocs run build",
+              "timeoutMs": 180000,
+              "id": "blockdata-devdocs-build",
+              "classes": [
+                "docs",
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "web": {
           "paths": [
-            { "prefixes": ["apps/web/"] }
+            {
+              "prefixes": [
+                "apps/web/"
+              ]
+            }
           ],
           "commands": [
-            { "label": "blockdata npm deps", "command": "node governance/scripts/check-deps.mjs", "timeoutMs": 60000 }
+            {
+              "label": "blockdata npm deps",
+              "command": "node governance/scripts/check-deps.mjs",
+              "timeoutMs": 60000,
+              "id": "blockdata-npm-deps-2",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         }
       }
@@ -110,19 +301,40 @@
       "domains": {
         "web": {
           "paths": [
-            { "prefixes": ["apps/web/"] },
-            { "prefixes": ["tests/e2e/"] },
-            { "prefixes": [".cursor/"] }
+            {
+              "prefixes": [
+                "apps/web/"
+              ]
+            },
+            {
+              "prefixes": [
+                "tests/e2e/"
+              ]
+            },
+            {
+              "prefixes": [
+                ".cursor/"
+              ]
+            }
           ],
           "commands": [
             {
               "label": "kai-chattr playwright settings e2e",
+              "id": "settings-e2e",
+              "classes": [
+                "browser",
+                "targeted"
+              ],
               "command": "npx playwright test tests/e2e/settings-page.spec.ts",
               "timeoutMs": 120000,
               "maxBuffer": 4194304
             },
             {
               "label": "kai-chattr playwright ui snapshot (live API)",
+              "id": "live-ui-snapshot",
+              "classes": [
+                "browser"
+              ],
               "command": "node scripts/dev/ui-snapshot-live.mjs",
               "timeoutMs": 120000,
               "maxBuffer": 4194304
@@ -131,11 +343,20 @@
         },
         "api": {
           "paths": [
-            { "prefixes": ["services/api/"] }
+            {
+              "prefixes": [
+                "services/api/"
+              ]
+            }
           ],
           "commands": [
             {
               "label": "kai-chattr api tests",
+              "id": "api-all-tests",
+              "classes": [
+                "quality",
+                "full-suite"
+              ],
               "command": "uv run python -m pytest tests/ -q",
               "cwd": "services/api",
               "env": {
@@ -165,7 +386,9 @@
                 "src/",
                 "tests/"
               ],
-              "excludeSegments": ["__pycache__"]
+              "excludeSegments": [
+                "__pycache__"
+              ]
             },
             {
               "fileNames": [
@@ -185,25 +408,45 @@
               "label": "kai-agent architecture guard",
               "command": "python scripts/check_architecture.py",
               "timeoutMs": 120000,
-              "maxBuffer": 4194304
+              "maxBuffer": 4194304,
+              "id": "kai-agent-architecture-guard",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
             },
             {
               "label": "kai-agent unit tests",
               "command": "python -m unittest discover -s tests",
               "timeoutMs": 120000,
-              "maxBuffer": 4194304
+              "maxBuffer": 4194304,
+              "id": "kai-agent-unit-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
             },
             {
               "label": "kai-agent compile",
               "command": "python -m compileall -q src scripts tests",
               "timeoutMs": 120000,
-              "maxBuffer": 4194304
+              "maxBuffer": 4194304,
+              "id": "kai-agent-compile",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
             },
             {
               "label": "kai-agent diff whitespace",
               "command": "git diff --check",
               "timeoutMs": 30000,
-              "maxBuffer": 4194304
+              "maxBuffer": 4194304,
+              "id": "kai-agent-diff-whitespace",
+              "classes": [
+                "targeted",
+                "quality"
+              ]
             }
           ]
         }
@@ -216,21 +459,149 @@
       "domains": {
         "backend": {
           "paths": [
-            { "extensions": [".py"], "excludeSegments": ["__pycache__", ".venv"] },
-            { "prefixes": ["server/", "tests/", "schemas/", "scripts/", "windows/", "macos-linux/", "session_templates/"] },
-            { "fileNames": ["pyproject.toml", "uv.lock", "requirements.txt", "config.toml", "config.local.toml.example"] }
+            {
+              "extensions": [
+                ".py"
+              ],
+              "excludeSegments": [
+                "__pycache__",
+                ".venv"
+              ]
+            },
+            {
+              "prefixes": [
+                "server/",
+                "tests/",
+                "schemas/",
+                "scripts/",
+                "windows/",
+                "macos-linux/",
+                "session_templates/"
+              ]
+            },
+            {
+              "fileNames": [
+                "pyproject.toml",
+                "uv.lock",
+                "requirements.txt",
+                "config.toml",
+                "config.local.toml.example"
+              ]
+            }
           ],
           "commands": [
-            { "label": "chattr backend tests", "command": "uv run pytest", "timeoutMs": 180000, "maxBuffer": 4194304 }
+            {
+              "label": "chattr backend tests",
+              "command": "uv run pytest",
+              "timeoutMs": 180000,
+              "maxBuffer": 4194304,
+              "id": "chattr-backend-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
           ]
         },
         "web": {
           "paths": [
-            { "prefixes": ["apps/web/"] },
-            { "fileNames": ["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"] }
+            {
+              "prefixes": [
+                "apps/web/"
+              ]
+            },
+            {
+              "fileNames": [
+                "package.json",
+                "pnpm-lock.yaml",
+                "pnpm-workspace.yaml"
+              ]
+            }
           ],
           "commands": [
-            { "label": "chattr web build", "command": "pnpm --filter @chattr/web build", "timeoutMs": 180000, "maxBuffer": 4194304 }
+            {
+              "label": "chattr web build",
+              "command": "pnpm --filter @chattr/web build",
+              "timeoutMs": 180000,
+              "maxBuffer": 4194304,
+              "id": "chattr-web-build",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "skill-perfectionists",
+      "root": "E:/skill-perfectionists",
+      "blockOnUnmatched": true,
+      "domains": {
+        "repo": {
+          "paths": [
+            {
+              "prefixes": [
+                ""
+              ],
+              "excludeSegments": [
+                ".git",
+                "docs"
+              ]
+            }
+          ],
+          "commands": [
+            {
+              "label": "skill-perfectionists diff whitespace",
+              "command": "git diff --check",
+              "timeoutMs": 30000,
+              "maxBuffer": 4194304,
+              "id": "skill-perfectionists-diff-whitespace",
+              "classes": [
+                "targeted",
+                "quality"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "carops",
+      "root": "E:/carops",
+      "blockOnUnmatched": true,
+      "domains": {
+        "repo": {
+          "paths": [
+            {
+              "prefixes": [
+                ""
+              ],
+              "excludeSegments": [
+                ".git",
+                "node_modules",
+                "references",
+                "logs",
+                "playwright-report",
+                "test-results",
+                "blob-report"
+              ]
+            }
+          ],
+          "commands": [
+            {
+              "label": "carops config contract",
+              "id": "config-contract",
+              "classes": [
+                "quality",
+                "config",
+                "targeted"
+              ],
+              "command": "pnpm run check:config",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304
+            }
           ]
         }
       }
@@ -248,6 +619,128 @@
       "disabledReason": "Temporarily disabled while hook control-plane refactor is in progress.",
       "blockOnUnmatched": false,
       "domains": {}
+    },
+    {
+      "name": "tfo",
+      "root": "E:/tfo",
+      "blockOnUnmatched": false,
+      "domains": {
+        "docs": {
+          "paths": [
+            {
+              "extensions": [
+                ".md",
+                ".txt"
+              ],
+              "excludeSegments": [
+                "v0.1",
+                "archive",
+                "references"
+              ]
+            },
+            {
+              "fileNames": [
+                "AGENTS.md",
+                "CHANGELOG.md",
+                "DESIGN.md",
+                "LICENSE",
+                "README.md",
+                "STACK.md"
+              ]
+            }
+          ],
+          "commands": [
+            {
+              "label": "tfo diff whitespace",
+              "command": "git diff --check",
+              "timeoutMs": 30000,
+              "maxBuffer": 4194304,
+              "id": "tfo-diff-whitespace",
+              "classes": [
+                "targeted",
+                "quality"
+              ]
+            }
+          ]
+        },
+        "prototype": {
+          "paths": [
+            {
+              "prefixes": [
+                "v0.1/src/",
+                "v0.1/tests/",
+                "v0.1/scripts/",
+                "v0.1/proto/",
+                "v0.1/hooks/",
+                "v0.1/adapter-node/src/"
+              ],
+              "excludeSegments": [
+                "__pycache__",
+                ".venv",
+                "node_modules",
+                "data"
+              ]
+            },
+            {
+              "prefixes": [
+                "v0.1/docs/",
+                "v0.1/adapter-node/"
+              ],
+              "extensions": [
+                ".md",
+                ".json",
+                ".ts",
+                ".yaml",
+                ".yml"
+              ]
+            },
+            {
+              "fileNames": [
+                "Makefile",
+                "pyproject.toml",
+                "uv.lock",
+                "compose.yaml",
+                ".env.example",
+                ".gitignore",
+                "package.json",
+                "package-lock.json",
+                "buf.yaml",
+                "buf.gen.connect-local.yaml",
+                "buf.gen.ts.yaml"
+              ],
+              "segments": [
+                "v0.1"
+              ]
+            }
+          ],
+          "commands": [
+            {
+              "label": "tfo prototype python syntax",
+              "command": "uv run --no-sync python -m compileall -q src scripts tests",
+              "cwd": "v0.1",
+              "timeoutMs": 180000,
+              "maxBuffer": 4194304,
+              "id": "tfo-prototype-python-syntax",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "tfo prototype adapter config syntax",
+              "command": "node -e \"const fs=require('fs'); for (const f of ['package.json','tsconfig.json']) JSON.parse(fs.readFileSync(f,'utf8')); console.log('adapter config ok')\"",
+              "cwd": "v0.1/adapter-node",
+              "timeoutMs": 120000,
+              "maxBuffer": 4194304,
+              "id": "tfo-prototype-adapter-config-syntax",
+              "classes": [
+                "targeted",
+                "quality"
+              ]
+            }
+          ]
+        }
+      }
     },
     {
       "name": "hooks",
@@ -274,15 +767,19 @@
                 "memory-normalizer/",
                 "quality-completion-gate/",
                 "agent-diff-completion-gate/",
+                "auth-slot-lease/",
                 "stop-completion-chain/",
                 "adapters/",
                 "examples/",
                 "scripts/",
                 "task-mode/",
+                "task-policy/",
                 "thinking-gate/",
                 "telemetry/"
               ],
-              "excludeSegments": ["__pycache__"]
+              "excludeSegments": [
+                "__pycache__"
+              ]
             },
             {
               "fileNames": [
@@ -302,24 +799,216 @@
             }
           ],
           "commands": [
-            { "label": "hooks runtime config validation", "command": "node _core/validate-runtime-hooks.mjs", "timeoutMs": 30000 },
-            { "label": "hooks config model tests", "command": "node quality-completion-gate/test-config-model.mjs", "timeoutMs": 30000 },
-            { "label": "hooks quality gate core tests", "command": "node quality-completion-gate/test-quality-gate-core.mjs", "timeoutMs": 30000 },
-            { "label": "hooks inject protocol core tests", "command": "node inject-protocol/test-inject-protocol-core.mjs", "timeoutMs": 30000 },
-            { "label": "hooks memory runtime smoke", "command": "python memory-normalizer/test-memory-runtime.py", "timeoutMs": 30000 },
-            { "label": "hooks read-only sqlite tests", "command": "python _core/test-hook-runtime.py && python inject-protocol/test-recall-readonly.py && python inject-protocol/test-suggest-readonly.py && python memory-normalizer/test-normalize-memory-tags-readonly.py && python memory-normalizer/test-maintain-readonly.py && python memory-harvester/test-harvest-readonly.py && python memory-harvester/test-harvest-hindsight-readonly.py && python memory-harvester/test-harvest-llm-readonly.py && python memory-harvester/test-harvest-eval-readonly.py", "timeoutMs": 30000 },
-            { "label": "hooks memory normalizer self-test", "command": "python memory-normalizer/normalize-after-store.py --self-test", "timeoutMs": 30000 },
-            { "label": "hooks task mode core tests", "command": "node task-mode/test-task-mode-core.mjs", "timeoutMs": 30000 },
-            { "label": "hooks task mode gate self-test", "command": "node task-mode/task-mode-gate.mjs --self-test", "timeoutMs": 30000 },
-            { "label": "hooks inject protocol self-test", "command": "node inject-protocol/test-inject-protocol-self-test.mjs", "timeoutMs": 30000 },
-            { "label": "hooks hook-dev tool tests", "command": "node hook-dev-tools/test-hook-dev-tools.mjs && node hook-dev-tools/test-hook.mjs --self-test", "timeoutMs": 30000 },
-            { "label": "hooks index-skills tests", "command": "python inject-protocol/test-index-skills.py", "timeoutMs": 30000 },
-            { "label": "hooks telemetry log-event tests", "command": "python hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
-            { "label": "hooks agent diff completion gate tests", "command": "node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs", "timeoutMs": 30000 },
-            { "label": "hooks stop completion chain tests", "command": "node stop-completion-chain/test-stop-completion-chain.mjs", "timeoutMs": 30000 },
-            { "label": "hooks python compile", "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py memory-harvester/harvest_core.py memory-harvester/harvest_hindsight.py memory-harvester/harvest_llm.py memory-harvester/harvest-stop.py memory-harvester/eval-harvest-quality.py memory-harvester/test-harvest-readonly.py memory-harvester/test-harvest-hindsight-readonly.py memory-harvester/test-harvest-llm-readonly.py memory-harvester/test-harvest-eval-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py", "timeoutMs": 30000 },
-            { "label": "hooks hindsight powershell syntax", "command": "powershell -NoProfile -EncodedCommand JABmAGkAbABlAHMAIAA9ACAAQAAoACcAaABpAG4AZABzAGkAZwBoAHQALwBlAG4AcwB1AHIAZQAtAGgAaQBuAGQAcwBpAGcAaAB0AC4AcABzADEAJwAsACAAJwBoAGkAbgBkAHMAaQBnAGgAdAAvAGkAbgBzAHQAYQBsAGwALQBzAHQAYQByAHQAdQBwAC0AdABhAHMAawAuAHAAcwAxACcALAAgACcAaABpAG4AZABzAGkAZwBoAHQALwB2AGUAcgBpAGYAeQAtAGgAaQBuAGQAcwBpAGcAaAB0AC4AcABzADEAJwApAAoAZgBvAHIAZQBhAGMAaAAgACgAJABmAGkAbABlACAAaQBuACAAJABmAGkAbABlAHMAKQAgAHsAIAAkAG4AdQBsAGwAIAA9ACAAWwBzAGMAcgBpAHAAdABiAGwAbwBjAGsAXQA6ADoAQwByAGUAYQB0AGUAKAAoAEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABmAGkAbABlACAALQBSAGEAdwApACkAIAB9AA==", "timeoutMs": 30000 },
-            { "label": "hooks node syntax", "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check hook-dev-tools/test-hook.mjs && node --check hook-dev-tools/test-hook-dev-tools.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check stop-completion-chain/stop-completion-chain.mjs && node --check stop-completion-chain/test-stop-completion-chain.mjs", "timeoutMs": 30000 }
+            {
+              "label": "hooks runtime config validation",
+              "command": "node _core/validate-runtime-hooks.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-runtime-config-validation",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks config model tests",
+              "command": "node quality-completion-gate/test-config-model.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-config-model-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks quality gate core tests",
+              "command": "node quality-completion-gate/test-quality-gate-core.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-quality-gate-core-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks inject protocol core tests",
+              "command": "node inject-protocol/test-inject-protocol-core.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-inject-protocol-core-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks memory runtime smoke",
+              "command": "python memory-normalizer/test-memory-runtime.py",
+              "timeoutMs": 30000,
+              "id": "hooks-memory-runtime-smoke",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks read-only sqlite tests",
+              "command": "python _core/test-hook-runtime.py && python inject-protocol/test-recall-readonly.py && python inject-protocol/test-suggest-readonly.py && python memory-normalizer/test-normalize-memory-tags-readonly.py && python memory-normalizer/test-maintain-readonly.py && python memory-harvester/test-harvest-readonly.py && python memory-harvester/test-harvest-hindsight-readonly.py && python memory-harvester/test-harvest-llm-readonly.py && python memory-harvester/test-harvest-eval-readonly.py",
+              "timeoutMs": 30000,
+              "id": "hooks-read-only-sqlite-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks memory normalizer self-test",
+              "command": "python memory-normalizer/normalize-after-store.py --self-test",
+              "timeoutMs": 30000,
+              "id": "hooks-memory-normalizer-self-test",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks task mode core tests",
+              "command": "node task-mode/test-task-mode-core.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-task-mode-core-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks task mode gate self-test",
+              "command": "node task-mode/task-mode-gate.mjs --self-test",
+              "timeoutMs": 30000,
+              "id": "hooks-task-mode-gate-self-test",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks task policy tests",
+              "command": "node task-policy/test-task-policy-core.mjs && node task-policy/test-task-policy-guard.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-task-policy-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks stop policy integration tests",
+              "command": "node stop-completion-chain/test-stop-policy-integration.mjs",
+              "timeoutMs": 60000,
+              "id": "hooks-stop-policy-integration-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks inject protocol self-test",
+              "command": "node inject-protocol/test-inject-protocol-self-test.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-inject-protocol-self-test",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks hook-dev tool tests",
+              "command": "node hook-dev-tools/test-hook-dev-tools.mjs && node hook-dev-tools/test-hook.mjs --self-test",
+              "timeoutMs": 30000,
+              "id": "hooks-hook-dev-tool-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks auth slot lease tests",
+              "command": "node auth-slot-lease/test-auth-slot-lease.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-auth-slot-lease-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks index-skills tests",
+              "command": "python inject-protocol/test-index-skills.py",
+              "timeoutMs": 30000,
+              "id": "hooks-index-skills-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks telemetry log-event tests",
+              "command": "python hook-telemetry/test-log-event.py",
+              "timeoutMs": 30000,
+              "id": "hooks-telemetry-log-event-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks agent diff completion gate tests",
+              "command": "node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-agent-diff-completion-gate-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks stop completion chain tests",
+              "command": "node stop-completion-chain/test-stop-completion-chain.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-stop-completion-chain-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks python compile",
+              "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py memory-harvester/harvest_core.py memory-harvester/harvest_hindsight.py memory-harvester/harvest_llm.py memory-harvester/harvest-stop.py memory-harvester/eval-harvest-quality.py memory-harvester/test-harvest-readonly.py memory-harvester/test-harvest-hindsight-readonly.py memory-harvester/test-harvest-llm-readonly.py memory-harvester/test-harvest-eval-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py",
+              "timeoutMs": 30000,
+              "id": "hooks-python-compile",
+              "classes": [
+                "targeted",
+                "quality"
+              ]
+            },
+            {
+              "label": "hooks hindsight powershell syntax",
+              "command": "powershell -NoProfile -EncodedCommand JABmAGkAbABlAHMAIAA9ACAAQAAoACcAaABpAG4AZABzAGkAZwBoAHQALwBlAG4AcwB1AHIAZQAtAGgAaQBuAGQAcwBpAGcAaAB0AC4AcABzADEAJwAsACAAJwBoAGkAbgBkAHMAaQBnAGgAdAAvAGkAbgBzAHQAYQBsAGwALQBzAHQAYQByAHQAdQBwAC0AdABhAHMAawAuAHAAcwAxACcALAAgACcAaABpAG4AZABzAGkAZwBoAHQALwB2AGUAcgBpAGYAeQAtAGgAaQBuAGQAcwBpAGcAaAB0AC4AcABzADEAJwApAAoAZgBvAHIAZQBhAGMAaAAgACgAJABmAGkAbABlACAAaQBuACAAJABmAGkAbABlAHMAKQAgAHsAIAAkAG4AdQBsAGwAIAA9ACAAWwBzAGMAcgBpAHAAdABiAGwAbwBjAGsAXQA6ADoAQwByAGUAYQB0AGUAKAAoAEcAZQB0AC0AQwBvAG4AdABlAG4AdAAgAC0ATABpAHQAZQByAGEAbABQAGEAdABoACAAJABmAGkAbABlACAALQBSAGEAdwApACkAIAB9AA==",
+              "timeoutMs": 30000,
+              "id": "hooks-hindsight-powershell-syntax",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks node syntax",
+              "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check hook-dev-tools/test-hook.mjs && node --check hook-dev-tools/test-hook-dev-tools.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check auth-slot-lease/claim-auth-slot.mjs && node --check auth-slot-lease/release-auth-slot.mjs && node --check auth-slot-lease/test-auth-slot-lease.mjs && node --check stop-completion-chain/stop-completion-chain.mjs && node --check stop-completion-chain/test-stop-completion-chain.mjs && node --check task-policy/task-policy-core.mjs && node --check task-policy/task-policy-guard.mjs && node --check task-policy/test-task-policy-core.mjs && node --check task-policy/test-task-policy-guard.mjs && node --check agent-diff-completion-gate/agent-diff-policy.mjs && node --check stop-completion-chain/test-stop-policy-integration.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-node-syntax",
+              "classes": [
+                "targeted",
+                "quality"
+              ]
+            }
           ]
         }
       }

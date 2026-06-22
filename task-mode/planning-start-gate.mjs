@@ -11,6 +11,20 @@ import {
   skillCheckpoint,
   writeState,
 } from './task-mode-core.mjs';
+import { readEnvelope, taskPolicyConfig, writeEnvelope } from '../task-policy/task-policy-core.mjs';
+
+/** Mirror the planning checkpoint onto the Active Task Envelope. Fail-open. */
+function markEnvelopeCheckpoint(runtime, sessionId, repoRoot) {
+  try {
+    const config = taskPolicyConfig(runtime.shared);
+    const { ok, envelope } = readEnvelope(config, sessionId, repoRoot);
+    if (ok && envelope && envelope.checkpointDone !== true) {
+      writeEnvelope(config, sessionId, repoRoot, { ...envelope, checkpointDone: true });
+    }
+  } catch {
+    // fail open — legacy task-mode checkpoint state remains authoritative
+  }
+}
 
 function deny(toolName, mode, required) {
   const reason =
@@ -53,6 +67,7 @@ function evaluate(input, runtime) {
   const sinceId = Number(state.telemetryWatermark || 0);
   if (skillCheckpoint(sessionId, sinceId, runtime, mode)) {
     writeState(settings, sessionId, repoRoot, { ...state, checkpointDone: true });
+    markEnvelopeCheckpoint(runtime, sessionId, repoRoot);
     return { continue: true };
   }
 

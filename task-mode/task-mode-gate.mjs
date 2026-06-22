@@ -12,6 +12,38 @@ import {
   writeState,
 } from './task-mode-core.mjs';
 import { hookRuntime, readJsonStdin, writeJson } from '../quality-completion-gate/quality-gate-core.mjs';
+import {
+  captureBaseline,
+  createOrAmendEnvelope,
+  readEnvelope,
+  taskPolicyConfig,
+  writeEnvelope,
+} from '../task-policy/task-policy-core.mjs';
+
+/**
+ * Create or amend the Active Task Envelope for this prompt. Fail-open: any
+ * error degrades to legacy task-mode behavior and never blocks the prompt.
+ */
+function updateEnvelope(input, runtime, { sessionId, repoRoot, prompt, mode, telemetryWatermark }) {
+  try {
+    const config = taskPolicyConfig(runtime.shared);
+    const existing = readEnvelope(config, sessionId, repoRoot).envelope;
+    const baseline = captureBaseline(repoRoot, runtime.shared?.runtime?.gitTimeoutMs);
+    const envelope = createOrAmendEnvelope({
+      existing,
+      prompt,
+      mode,
+      sessionId,
+      repoRoot,
+      config,
+      baseline,
+      telemetryWatermark,
+    });
+    writeEnvelope(config, sessionId, repoRoot, envelope);
+  } catch {
+    // fail open — legacy task-mode state remains the fallback authority
+  }
+}
 
 function promptText(input) {
   return (
@@ -33,14 +65,17 @@ function evaluate(input, runtime) {
   const mode = classifyMode(prompt);
   const explicit = Boolean(parseExplicitMode(prompt));
 
+  const telemetryWatermark = telemetryHighWatermark(sessionId, runtime);
   writeState(runtime.settings || {}, sessionId, repoRoot, {
     mode,
     explicit,
     promptSnippet: String(prompt).slice(0, 240),
     classifiedAt: new Date().toISOString(),
-    telemetryWatermark: telemetryHighWatermark(sessionId, runtime),
+    telemetryWatermark,
     checkpointDone: false,
   });
+
+  updateEnvelope(input, runtime, { sessionId, repoRoot, prompt, mode, telemetryWatermark });
 
   const additionalContext = modeInjectionBlock(mode);
 

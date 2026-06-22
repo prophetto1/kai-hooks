@@ -36,14 +36,32 @@ source of truth.
 
 | Event | Primary hooks |
 | --- | --- |
-| `UserPromptSubmit` | `inject-protocol`, `task-mode-gate` |
-| `PreToolUse` | `thinking-gate` when enabled, `planning-start-gate`, `loop-safety` |
+| `UserPromptSubmit` | `inject-protocol`, `task-mode-gate` (also builds the Active Task Envelope) |
+| `PreToolUse` | `thinking-gate` when enabled, `planning-start-gate`, `task-policy-guard`, `loop-safety` |
 | `PostToolUse` / `PostToolUseFailure` | `hook-telemetry`, `memory-normalizer` |
-| `Stop` | `stop-completion-chain` runs `memory-harvester`, `quality-completion-gate`, then `agent-diff-completion-gate` |
+| `Stop` | `stop-completion-chain` (sole policy authority) runs `memory-harvester`, then only the policy-selected `quality-completion-gate` / `agent-diff-completion-gate` executors |
 
 The repo is built around config-driven orchestration. Individual hook scripts
 should read the shared runtime plus their own config entry instead of drifting
 into hardcoded copies.
+
+### Active Task Policy
+
+`task-policy/` is the task-intent control plane. At `UserPromptSubmit`,
+`task-mode-gate` records an **Active Task Envelope** (`task-policy-core.mjs`)
+keyed by session + repo: task identity, git baseline (commit + dirty
+fingerprints), explicit user directives (read-only, browser/full-suite
+suppression, scope/route locks), and selected routes. At `PreToolUse`,
+`task-policy-guard` denies only tools/commands the active task explicitly
+forbids. At `Stop`, `stop-completion-chain` is the sole authority: it runs the
+non-overridable verification-integrity audit, computes **task-relative** changes
+(excluding pre-existing dirt, including files committed during the task),
+selects which gates and command classes may run, runs only those executors with
+the task-scoped file list, owns block vs report-only disposition, suppresses
+unchanged blockers, and appends a bounded decision record under
+`.state/task-policy/`. Missing/stale policy state runs no heavy gate and says so;
+skipped verification is reported as not-run, never as passed. Directives are
+deterministic config-backed phrases — no LLM intent classifier.
 
 ## Repository Layout
 
@@ -52,6 +70,7 @@ into hardcoded copies.
 | `_core/` | Shared runtime loader, config model, and schema/validation utilities |
 | `inject-protocol/` | Prompt protocol injection, memory recall, and skill suggestion |
 | `task-mode/` | Mode classification and planning-start gate |
+| `task-policy/` | Active Task Envelope, PreToolUse policy guard, and Stop gate selection/disposition core |
 | `hook-telemetry/` | Tool event logging into the hooks SQLite store |
 | `loop-safety/` | Same-error retry breaker for mutating tools |
 | `memory-harvester/` | Stop-time durable-memory extraction with exchange-cadenced SQLite writes |
@@ -89,6 +108,8 @@ Start with the smallest check that covers the files you touched.
 - Quality gate changes: `node quality-completion-gate/test-quality-gate-core.mjs`
 - Inject protocol changes: `node inject-protocol/test-inject-protocol-core.mjs`
 - Task-mode changes: `node task-mode/test-task-mode-core.mjs`
+- Task-policy changes: `node task-policy/test-task-policy-core.mjs && node task-policy/test-task-policy-guard.mjs`
+- Stop policy wiring: `node stop-completion-chain/test-stop-policy-integration.mjs`
 - Agent-diff gate changes: `node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs`
 - Memory readonly checks: `python memory-harvester/test-harvest-readonly.py`
 - Service availability: run `hindsight/verify-hindsight.ps1` or `codex-proxy/verify-codex-proxy.ps1`

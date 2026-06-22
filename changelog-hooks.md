@@ -10,6 +10,153 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-21 - Stop task-policy hardening (post-review)
+
+Addresses findings from the implementation + blind reviews of the task-policy
+control plane.
+
+- Fixed (directive over-match): `task-policy-core.mjs` `parseDirectives` no longer
+  treats a bare "read-only" mention as a directive. It now requires directive
+  intent (`mode: read-only`, "keep/make/set … read-only", "read-only mode/task",
+  "do not modify/edit/change/write"). Discovered by dogfooding — a prompt that
+  merely *discussed* read-only enforcement was locking the session.
+- Added (read-only shell policy): `task-policy-guard.mjs` now denies non-discovery
+  shell commands while read-only is active (not just file-mutating tools and heavy
+  commands). Conservative allowlist of read-only binaries + git read-subcommands;
+  compound commands and write redirections are parsed and denied; deny-unknown is
+  the default. New `shellIsReadOnlySafe` export + 6 guard tests (21 total).
+- Changed (cheaper fingerprinting): `task-policy-core.mjs` `fileFingerprint`
+  content-hashes only files ≤ 512KB and falls back to a size+mtime fingerprint for
+  larger/unreadable paths, so baseline/delta no longer reads full contents of huge
+  dirty files on every prompt and Stop. Deletions hash as absent.
+- Changed (append-only decision log): `appendDecision` now appends a single JSONL
+  line (race-free for concurrent Stops) with amortized rewrite-trim only past 2×
+  the cap, instead of read-modify-write on every append.
+- Changed (structured Stop failure): `stop-completion-chain.mjs` now emits a
+  sanitized, bounded, non-imperative failure summary (gate + command ids +
+  redacted detail) instead of a contentless "gate failed" message; extracted
+  `runIntegrityAudit`, `sanitizeFailureDetail`, `failureSummary` helpers.
+- Deferred (with rationale): separating agent-diff's legacy remediation renderer
+  from executor logic — that path is not the live Stop path (the chain owns
+  messaging), so the 2.3k-line refactor is high-risk/low-reward for now.
+- Verification: full node chain green (task-policy core 29 + guard 21, task-mode,
+  quality + verification-integrity + config-model, agent-diff, stop-chain unit +
+  16/16 integration, hook-dev-tools, validate-runtime-hooks).
+
+### 2026-06-21 - Stop task-policy control plane (Active Task Envelope)
+
+Adds a shared in-process task-policy subsystem so Stop verification and heavy
+commands obey the active user task and explicit directives instead of treating
+the whole dirty worktree as current work. Implements plan
+`_briefs/2026-06-21-stop-task-policy-control-plane-implementation-plan.md` (v1.1);
+execution evidence in the matching `-execution-manifest.md`.
+
+- Added: `task-policy/task-policy-core.mjs` — Active Task Envelope lifecycle,
+  deterministic directive parsing + precedence, git baseline + task-relative
+  change calculation, command classification, Stop gate selection/disposition,
+  bounded decision JSONL, and unchanged-failure fingerprints. Tested by
+  `task-policy/test-task-policy-core.mjs` (29 checks).
+- Added: `task-policy/task-policy-guard.mjs` — PreToolUse guard that denies only
+  what the active task explicitly forbids (read-only mutations, forbidden
+  scopes, heavy browser/full-suite commands; conservative on missing policy
+  state). Reuses the `loop-safety` `tool_input.command` precedent. Tested by
+  `task-policy/test-task-policy-guard.mjs` (15 checks).
+- Added: `agent-diff-completion-gate/agent-diff-policy.mjs` — pure
+  applicability + selected-route helpers shared by the gate and the policy core.
+- Added: `stop-completion-chain/test-stop-policy-integration.mjs` — the 16 named
+  acceptance scenarios (read-only skip, browser/full-suite suppression,
+  task-relative delta, carops config-only, unchanged-blocker no-rerun,
+  integrity non-override, neutral status, guard denial, etc.). 16/16 pass.
+- Added: `examples/codex/task-policy-hooks.fragment.toml` — complete Codex
+  prompt + guard + Stop policy wiring example with a neutral Stop status.
+- Changed: `stop-completion-chain/stop-completion-chain.mjs` is now the sole Stop
+  policy + disposition authority — loads the envelope, runs the non-overridable
+  verification-integrity audit, computes task-relative changes, selects gates,
+  runs only selected executors with policy context, owns block/report-only,
+  suppresses unchanged blockers, appends a bounded decision record, and emits a
+  truthful dynamic status. Conservative no-heavy-gate on missing/stale envelope;
+  top-level fail-safe preserved.
+- Changed: `task-mode/task-mode-gate.mjs` creates/amends the envelope (captures
+  the git baseline) fail-open; `task-mode/planning-start-gate.mjs` mirrors the
+  planning checkpoint onto the envelope.
+- Changed: `quality-completion-gate/quality-completion-gate.mjs` and
+  `agent-diff-completion-gate/agent-diff-completion-gate.mjs` consume
+  `taskPolicy.taskChangedFiles` (task-scoped file set) and quality skips
+  command classes a directive forbids. Direct/legacy invocation behavior is
+  unchanged (existing gate tests still pass).
+- Changed: `_core/config-model.mjs` validates `shared.taskPolicy` and the
+  `task-policy-guard` hook (event/script/fail-open + companion dependencies);
+  `_core/validate-runtime-hooks.mjs` rejects a stale, gate-claiming Codex Stop
+  status in example wiring (neutral status required). Schema regenerated.
+- Changed: `config.json` adds the `shared.taskPolicy` block and the
+  `task-policy-guard` PreToolUse hook;
+  `quality-completion-gate/quality-verify-manifest.json` declares the
+  `task-policy/` verify domain + tests and stable ids/classes for the
+  carops/kai-chattr commands.
+- Changed: `examples/codex/stop-hooks.fragment.toml` Stop status is now neutral
+  ("Evaluating Stop policy") instead of falsely claiming quality/Playwright/review.
+- Fixed: the flaky single-flight timing assertion in
+  `quality-completion-gate/test-quality-gate-core.mjs` (load-sensitive
+  `<500ms` proxy) made deterministic; correctness check (`runCount===1`) intact.
+- Verification (node, this session): all of test-task-policy-core,
+  test-task-policy-guard, test-task-mode-core, test-quality-gate-core,
+  test-verification-integrity, test-config-model, test-agent-diff,
+  test-stop-completion-chain, test-stop-policy-integration (16/16),
+  test-hook-dev-tools, and validate-runtime-hooks pass; config schema
+  regenerates clean.
+- Runtime cutover (applied): external user-level wiring updated —
+  `~/.codex/config.toml` (added `task-policy-guard` PreToolUse + neutral
+  "Evaluating Stop policy" status), `~/.claude/settings.json` and
+  `~/.cursor/hooks.json` (added the `task-policy-guard` PreToolUse hook). Each
+  file was snapshotted to `.state/task-policy/runtime-backup/<timestamp>/` before
+  editing; all parse and `node _core/validate-runtime-hooks.mjs` passes.
+- Manifest metadata: all 49 verify commands now carry stable `id` + non-empty
+  `classes` (0 missing). The flaky single-flight timing assertion in
+  `test-quality-gate-core.mjs` was made deterministic.
+- Final verification: full node regression chain green under load (task-policy
+  core/guard, task-mode, quality gate + verification-integrity + config-model,
+  agent-diff, stop-chain unit + 16/16 integration, hook-dev-tools,
+  validate-runtime-hooks, schema regen).
+
+### 2026-06-20 - Register skill-perfectionists quality coverage
+
+- Added: `quality-completion-gate/quality-verify-manifest.json` now recognizes
+  `E:/skill-perfectionists` and runs a lightweight `git diff --check` gate for
+  repo changes.
+- Changed: The new repo entry uses `blockOnUnmatched: true` so future local
+  changes must stay covered by an explicit verification domain.
+
+### 2026-06-20 - Register TFO quality completion coverage
+
+- Added: `quality-completion-gate/quality-verify-manifest.json` now recognizes
+  `E:/tfo` with a docs gate for root planning artifacts and a prototype gate for
+  `v0.1` Python, proto, hook, and adapter surfaces.
+- Changed: TFO is configured with `blockOnUnmatched: false` while the new repo
+  has no committed baseline, so Stop can classify known surfaces without
+  blocking unrelated bootstrap files.
+- Changed: TFO prototype Stop checks are bootstrap-safe and avoid package
+  download or `node_modules` assumptions until the repo has an installed
+  dependency baseline.
+
+### 2026-06-19 - Store harvester rows through sqlite_vec
+
+- Fixed: `memory-harvester` now writes production memory rows through a
+  `mcp-memory-service` sqlite_vec bridge so new rows receive vector embeddings
+  instead of only `memories` and FTS rows.
+- Changed: the harvester vector store path uses `BAAI/bge-small-en-v1.5` and
+  keeps Hindsight disabled/secondary until a separate cutover is ready.
+
+### 2026-06-19 - Add JWC auth slot lease tool
+
+- Added: `auth-slot-lease/claim-auth-slot.mjs` and
+  `auth-slot-lease/release-auth-slot.mjs` so local launchers can claim and
+  release SOPS-provisioned JWC synthetic agent identities without storing lease
+  state in product repos or Postgres.
+- Added: `auth-slot-lease/test-auth-slot-lease.mjs` covering parallel claims,
+  exhausted pools, stale lease reclaim, and token-scoped release protection.
+- Changed: The quality completion manifest now recognizes the new
+  `auth-slot-lease/` root and runs the targeted lease tests.
+
 ### 2026-06-19 - Add config-aware hook development QA
 
 - Fixed: Skill indexing now uses the live `E:/_skills` warehouse instead of the

@@ -23,8 +23,26 @@ import {
   isFraudulentVerificationCommand,
   verificationFraudBlock,
 } from './verification-integrity.mjs';
+import { classifyCommand } from '../task-policy/task-policy-core.mjs';
 
 const runtime = hookRuntime(import.meta.url);
+
+/**
+ * When the Stop chain drives this gate as a policy executor, it supplies
+ * `input.taskPolicy`. The gate then scopes to the policy-supplied file list and
+ * skips commands whose classes a user directive forbids (browser / full-suite).
+ * Absent taskPolicy (direct/legacy invocation) the gate behaves as before.
+ */
+function policyForbiddenClasses(input) {
+  const tp = input && input.taskPolicy;
+  return Array.isArray(tp?.forbiddenClasses) ? tp.forbiddenClasses : [];
+}
+
+function commandAllowedByPolicy(command, forbiddenClasses) {
+  if (!forbiddenClasses.length) return true;
+  const classes = classifyCommand(command);
+  return !classes.some((klass) => forbiddenClasses.includes(klass));
+}
 const DEFAULT_MAX_REPEATED_FAILURE_BLOCKS = 3;
 const DEFAULT_TOTAL_BUDGET_MS = 90000;
 const REFERENCE_REPO_SEGMENTS = new Set([
@@ -354,7 +372,12 @@ function evaluate(input) {
   }
 
   try {
-    const filesResult = changedFiles(repoRoot, runtime.shared.runtime.gitTimeoutMs);
+    const policyFiles = Array.isArray(input.taskPolicy?.taskChangedFiles)
+      ? input.taskPolicy.taskChangedFiles
+      : null;
+    const filesResult = policyFiles
+      ? { ok: true, value: policyFiles }
+      : changedFiles(repoRoot, runtime.shared.runtime.gitTimeoutMs);
     if (!filesResult.ok) {
       return block(
         runtime,
@@ -417,7 +440,16 @@ function evaluate(input) {
       return { continue: true };
     }
 
-    const commands = commandsForDomains(repoEntry, domainNames);
+    const allCommands = commandsForDomains(repoEntry, domainNames);
+    const forbiddenClasses = policyForbiddenClasses(input);
+    const commands = forbiddenClasses.length
+      ? allCommands.filter((command) => commandAllowedByPolicy(command, forbiddenClasses))
+      : allCommands;
+    if (forbiddenClasses.length && allCommands.length && !commands.length) {
+      // Every command for the touched domains is forbidden by an active directive.
+      clearState(runtime, input, repoRoot);
+      return { continue: true };
+    }
     if (!commands.length) {
       return block(
         runtime,

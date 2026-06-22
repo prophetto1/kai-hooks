@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sqlite3
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ from memory_retain import (  # noqa: E402 — sibling import via harvest-stop sy
 )
 
 ACTIVE_SQL = "deleted_at IS NULL AND (superseded_by IS NULL OR superseded_by='')"
+DEFAULT_VECTOR_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
+DEFAULT_VECTOR_STORE_TIMEOUT_MS = 180000
 SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 TERM_RE = re.compile(r"[A-Za-z0-9_-]{3,}")
 HARVEST_SIGNALS = (
@@ -305,6 +308,163 @@ def connect_memory(db_path: str) -> sqlite3.Connection:
     return con
 
 
+def default_vector_bridge_python() -> str:
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return str(Path(appdata) / "uv" / "tools" / "mcp-memory-service" / "Scripts" / "python.exe")
+    return "python"
+
+
+def default_model_cache_dir() -> str:
+    local_appdata = os.environ.get("LOCALAPPDATA")
+    if local_appdata:
+        return str(Path(local_appdata) / "mcp-memory" / "model-cache")
+    return str(Path.home() / ".cache" / "mcp-memory")
+
+
+def vector_store_settings(settings: dict[str, Any] | None) -> dict[str, Any]:
+    raw = (settings or {}).get("vectorStore")
+    if not isinstance(raw, dict):
+        raw = {}
+    return {
+        "enabled": raw.get("enabled", True) is not False,
+        "bridgePython": str(raw.get("bridgePython") or default_vector_bridge_python()),
+        "embeddingModel": str(raw.get("embeddingModel") or DEFAULT_VECTOR_EMBEDDING_MODEL),
+        "modelCacheDir": str(raw.get("modelCacheDir") or default_model_cache_dir()),
+        "timeoutMs": int(raw.get("timeoutMs") or DEFAULT_VECTOR_STORE_TIMEOUT_MS),
+    }
+
+
+def has_memory_embeddings_table(con: sqlite3.Connection) -> bool:
+    row = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE name = 'memory_embeddings' LIMIT 1"
+    ).fetchone()
+    return row is not None
+
+
+def should_use_vector_store(con: sqlite3.Connection, settings: dict[str, Any] | None) -> bool:
+    vector = vector_store_settings(settings)
+    return bool(vector["enabled"]) and has_memory_embeddings_table(con)
+
+
+def last_json(stdout: str) -> dict[str, Any] | None:
+    for line in reversed(stdout.splitlines()):
+        stripped = line.strip()
+        if not stripped or not stripped.startswith("{"):
+            continue
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def insert_memory_vector(
+    retain: dict[str, Any],
+    *,
+    db_path: str,
+    tags: str,
+    metadata: dict[str, Any],
+    now: float,
+    settings: dict[str, Any] | None,
+) -> dict[str, Any]:
+    vector = vector_store_settings(settings)
+    bridge_python = Path(vector["bridgePython"])
+    bridge_script = Path(__file__).resolve().with_name("vector_store_bridge.py")
+    if not bridge_python.is_file():
+        return {
+            "decision": "reject",
+            "reason": "vector_bridge_python_missing",
+            "bridgePython": str(bridge_python),
+            "contentPreview": clip(retain["content"], 120),
+        }
+    if not bridge_script.is_file():
+        return {
+            "decision": "reject",
+            "reason": "vector_bridge_script_missing",
+            "bridgeScript": str(bridge_script),
+            "contentPreview": clip(retain["content"], 120),
+        }
+
+    timeout_seconds = max(1.0, float(vector["timeoutMs"]) / 1000.0)
+    payload = {
+        "db_path": db_path,
+        "content_hash": retain["content_fingerprint"],
+        "content": retain["content"],
+        "tags": [part.strip() for part in tags.split(",") if part.strip()],
+        "memory_type": retain["memory_type"],
+        "metadata": metadata,
+        "created_at": now,
+        "updated_at": now,
+        "created_at_iso": retain.get("created_at_iso") or utc_iso(now),
+        "updated_at_iso": retain.get("created_at_iso") or utc_iso(now),
+        "confidence": clamp_confidence(retain.get("confidence"), 0.85),
+        "embedding_model": vector["embeddingModel"],
+        "model_cache_dir": vector["modelCacheDir"],
+    }
+    env = dict(os.environ)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["MCP_EMBEDDING_MODEL"] = vector["embeddingModel"]
+    env["MCP_MEMORY_MODEL_CACHE_DIR"] = vector["modelCacheDir"]
+    try:
+        completed = subprocess.run(
+            [str(bridge_python), str(bridge_script)],
+            input=json.dumps(payload, ensure_ascii=True),
+            text=True,
+            encoding="utf-8",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "decision": "reject",
+            "reason": "vector_store_timeout",
+            "timeoutMs": vector["timeoutMs"],
+            "contentPreview": clip(retain["content"], 120),
+        }
+
+    parsed = last_json(completed.stdout or "")
+    if completed.returncode != 0 or not parsed or not parsed.get("ok"):
+        error_text = ""
+        if parsed and parsed.get("error"):
+            error_text = str(parsed["error"])
+        elif completed.stderr:
+            error_text = clip(completed.stderr, 500)
+        else:
+            error_text = clip(completed.stdout, 500)
+        return {
+            "decision": "reject",
+            "reason": "vector_store_failed",
+            "error": error_text,
+            "embeddingModel": vector["embeddingModel"],
+            "contentPreview": clip(retain["content"], 120),
+        }
+
+    if parsed.get("decision") == "skip":
+        return {
+            "decision": "skip",
+            "reason": parsed.get("reason") or "duplicate",
+            "memoryId": parsed.get("memoryId"),
+            "contentHash": parsed.get("contentHash") or retain["content_fingerprint"],
+        }
+
+    return {
+        "decision": "stored",
+        "memoryId": parsed.get("memoryId"),
+        "contentHash": parsed.get("contentHash") or retain["content_fingerprint"],
+        "memoryType": retain["memory_type"],
+        "tags": tags,
+        "embeddingModel": parsed.get("embeddingModel") or vector["embeddingModel"],
+        "vectorStore": "sqlite_vec",
+    }
+
+
 def existing_memory_settings(settings: dict[str, Any]) -> dict[str, Any]:
     raw = settings.get("existingMemoryContext")
     if not isinstance(raw, dict):
@@ -408,7 +568,9 @@ def insert_memory(
     *,
     config: dict[str, Any],
     session_id: str,
+    settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    db_path = config.get("shared", {}).get("paths", {}).get("memoryDb", "E:/_memory/memory-sqlite.db")
     content_hash = retain["content_fingerprint"]
     existing = con.execute(
         f"SELECT id FROM memories WHERE content_hash = ? AND {ACTIVE_SQL}",
@@ -429,6 +591,17 @@ def insert_memory(
     metadata["memory_harvester"] = harvester_meta
     now = float(retain.get("created_at") or time.time())
     tags = tags_to_string(retain["tags"], config)
+
+    if should_use_vector_store(con, settings):
+        return insert_memory_vector(
+            retain,
+            db_path=db_path,
+            tags=tags,
+            metadata=metadata,
+            now=now,
+            settings=settings,
+        )
+
     cur = con.execute(
         """
         INSERT INTO memories (
@@ -589,6 +762,7 @@ def store_candidates(
     candidate_rows: list[dict[str, Any]],
     *,
     config: dict[str, Any],
+    settings: dict[str, Any] | None = None,
     cwd: str,
     session_id: str,
     extraction_meta: dict[str, Any],
@@ -653,7 +827,7 @@ def store_candidates(
             except MemoryQualityError as exc:
                 rejected_rows.append({"contentPreview": clip(content, 120), "reason": str(exc)})
                 continue
-            outcome = insert_memory(con, retain, config=config, session_id=session_id)
+            outcome = insert_memory(con, retain, config=config, session_id=session_id, settings=settings)
             if outcome["decision"] == "stored":
                 outcome["operation"] = operation
                 if supersedes_id is not None:
@@ -663,6 +837,8 @@ def store_candidates(
                         outcome["supersedeWarning"] = "target_not_active"
                 stored_rows.append(outcome)
                 stored_pairs.append((outcome, retain))
+            elif outcome["decision"] == "reject":
+                rejected_rows.append(outcome)
             else:
                 skipped_rows.append(outcome)
         if stored_rows:
@@ -763,6 +939,7 @@ def harvest_session(
     stored_rows, skipped_rows, rejected_rows, stored_pairs = store_candidates(
         candidate_rows[:max_candidates],
         config=config,
+        settings=settings,
         cwd=cwd,
         session_id=session_id,
         extraction_meta=extraction_meta,

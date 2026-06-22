@@ -5,4 +5,4 @@
 type = "command"
 command = "node E:/hooks/stop-completion-chain/stop-completion-chain.mjs"
 timeout = 360
-statusMessage = "Running completion gates (quality, Playwright, review)"
+statusMessage = "Evaluating Stop policy"

@@ -2,7 +2,7 @@
 
 Status: active
 Owner: Jon
-Last reviewed: 2026-06-19
+Last reviewed: 2026-06-21
 Applies to: runtime, dependency, local-service, and verification work
 
 `hooks` is a script-first control-plane repo. It is not a single app with one
@@ -21,7 +21,8 @@ SQLite, Git-based diff inspection, and a few local helper services.
 | Migration utilities | `memory-sync/` backfill scripts for SQLite-to-Hindsight document migration |
 | Local service helpers | PowerShell scripts in `hindsight/` and `codex-proxy/` |
 | Hook development QA | `hook-dev-tools/test-hook.mjs` for sample payloads, contract linting, and explicit selected-hook execution |
-| Stop gating | `stop-completion-chain/`, `quality-completion-gate/`, `agent-diff-completion-gate/` |
+| Task policy | `task-policy/` Active Task Envelope + PreToolUse guard + Stop gate selection/disposition core; state under `.state/task-policy/` |
+| Stop gating | `stop-completion-chain/` (sole policy authority), with `quality-completion-gate/` and `agent-diff-completion-gate/` as policy-driven executors |
 | Supported workspaces | `blockdata`, `kai-chattr`, `kai`, `writing-system`, `chattr`, `jwc-global`, `dbase` |
 | Runtime adapters | Codex and Claude stop-chain wiring, plus `adapters/cursor/` support |
 
@@ -81,6 +82,7 @@ requires it.
 | Agent-diff gate | `node agent-diff-completion-gate/test-agent-diff-completion-gate.mjs` |
 | Inject protocol | `node inject-protocol/test-inject-protocol-core.mjs` and `node inject-protocol/test-inject-protocol-self-test.mjs` |
 | Task-mode / planning gates | `node task-mode/test-task-mode-core.mjs` and gate self-tests |
+| Task policy / Stop policy | `node task-policy/test-task-policy-core.mjs && node task-policy/test-task-policy-guard.mjs && node stop-completion-chain/test-stop-policy-integration.mjs` |
 | Memory runtime | `python memory-normalizer/test-memory-runtime.py` and targeted read-only tests |
 | Hindsight backfill utilities | `python memory-sync/backfill-sqlite-to-hindsight.py --dry-run --limit 5` |
 | PowerShell helper scripts | Run the corresponding `verify-*.ps1` script when possible |
@@ -101,8 +103,14 @@ was just edited.
 ## Important Stack Decisions
 
 - `config.json` is the single source of truth for hook tunables and stop-chain wiring.
-- `stop-completion-chain` is the canonical Stop orchestrator; individual gates
-  should not grow their own competing runtime wiring.
+- `stop-completion-chain` is the canonical Stop orchestrator AND the sole Stop
+  policy/disposition authority. It consumes the Active Task Envelope
+  (`task-policy/`) to run only task-relevant gates with task-scoped files,
+  records bounded decisions under `.state/task-policy/`, and reports skipped
+  verification as not-run. Individual gates are executors; they must not grow
+  their own competing runtime wiring or remediation authority.
+- Task directives are deterministic config-backed phrases (no LLM intent
+  classifier); verification-integrity remains non-overridable by any directive.
 - SQLite remains the active memory recall base while Hindsight stays wired for
   synchronized retain and future cutover work.
 - `memory-harvester` uses the local Codex subscription proxy by default instead

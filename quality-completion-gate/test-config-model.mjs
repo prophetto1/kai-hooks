@@ -281,7 +281,52 @@ assert.ok(
   'thinking-gate read-only grant exemptions must be rejected'
 );
 
+// --- task-policy-guard + shared.taskPolicy validation ---
+
+const badGuardEvent = structuredClone(config);
+hookById(badGuardEvent, 'task-policy-guard').event = 'Stop';
+assert.ok(
+  validateConfig(badGuardEvent).errors.some((e) => e.includes('task-policy-guard.event must be PreToolUse')),
+  'task-policy-guard event must be validated'
+);
+
+const badGuardScript = structuredClone(config);
+hookById(badGuardScript, 'task-policy-guard').script.path = 'task-policy/wrong.mjs';
+assert.ok(
+  validateConfig(badGuardScript).errors.some((e) => e.includes('task-policy-guard.script.path mismatch')),
+  'task-policy-guard script path must be validated'
+);
+
+const badGuardFailPolicy = structuredClone(config);
+hookById(badGuardFailPolicy, 'task-policy-guard').failPolicy = 'closed';
+assert.ok(
+  validateConfig(badGuardFailPolicy).errors.some((e) => e.includes('task-policy-guard.failPolicy must be open')),
+  'task-policy-guard must be fail-open'
+);
+
+const guardMissingDep = structuredClone(config);
+guardMissingDep.hooks = guardMissingDep.hooks.filter((h) => h.id !== 'task-mode-gate');
+assert.ok(
+  validateConfig(guardMissingDep).errors.some((e) => e.includes('task-policy-guard requires hooks[id=task-mode-gate]')),
+  'task-policy-guard must require its companion hooks'
+);
+
+const badTaskPolicy = structuredClone(config);
+badTaskPolicy.shared.taskPolicy.maxObjectiveChars = 0;
+assert.ok(
+  validateConfig(badTaskPolicy).errors.some((e) => e.includes('shared.taskPolicy.maxObjectiveChars')),
+  'invalid shared.taskPolicy.maxObjectiveChars must be rejected'
+);
+
+const badTaskPolicyRetention = structuredClone(config);
+badTaskPolicyRetention.shared.taskPolicy.decisionRetentionDays = -1;
+assert.ok(
+  validateConfig(badTaskPolicyRetention).errors.some((e) => e.includes('shared.taskPolicy.decisionRetentionDays')),
+  'negative decisionRetentionDays must be rejected'
+);
+
 const schema = generateConfigSchema();
+assert.ok(schema.$defs.shared.properties.taskPolicy, 'generated schema must define shared.taskPolicy');
 const hookEventSchema = schema.$defs.hook.properties.event;
 assert.equal(schema.$id, 'file:///E:/hooks/config.schema.json');
 assert.ok(hookEventSchema.oneOf[0].enum.includes('UserPromptSubmit'));

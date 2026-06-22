@@ -342,8 +342,8 @@ async function testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwi
           `const next=String((Number(fs.existsSync(countPath)?fs.readFileSync(countPath,'utf8'):0)||0)+1);` +
           `fs.writeFileSync(countPath,next);` +
           `fs.writeFileSync(marker,'started');` +
-          `setTimeout(() => {}, 250)"`,
-        timeoutMs: 5000
+          `setTimeout(() => {}, 3000)"`,
+        timeoutMs: 8000
       }
     ]));
     writeJson(configPath, configFor(manifestPath, stateDir, {
@@ -360,7 +360,7 @@ async function testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwi
     const startedAt = Date.now();
     const second = stopGate({ ...payload, session_id: 'single-flight-session-2' }, env);
     assert.deepEqual(second, { continue: true });
-    assert.ok(Date.now() - startedAt < 500, 'second gate should not wait for the slow command');
+    assert.ok(Date.now() - startedAt < 2800, 'second gate should not wait for the slow command');
 
     const firstResult = await waitForStopGate(first);
     assert.equal(firstResult.status, 0, firstResult.stderr || firstResult.stdout);

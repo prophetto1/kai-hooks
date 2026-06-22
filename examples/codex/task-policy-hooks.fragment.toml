@@ -1,0 +1,32 @@
+# Complete Codex wiring for the Stop task-policy control plane.
+# Paste into ~/.codex/config.toml (merge with existing [[hooks.*]] blocks).
+#
+# Flow: UserPromptSubmit builds the Active Task Envelope -> PreToolUse enforces
+# planning + the task-policy guard -> Stop runs the single policy chain.
+
+[[hooks.UserPromptSubmit]]
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = "node E:/hooks/task-mode/task-mode-gate.mjs"
+timeout = 30
+statusMessage = "Classifying task + building task envelope"
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "node E:/hooks/task-mode/planning-start-gate.mjs"
+timeout = 30
+statusMessage = "Planning checkpoint gate"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "node E:/hooks/task-policy/task-policy-guard.mjs"
+timeout = 30
+statusMessage = "Task policy guard"
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "node E:/hooks/stop-completion-chain/stop-completion-chain.mjs"
+timeout = 360
+statusMessage = "Evaluating Stop policy"

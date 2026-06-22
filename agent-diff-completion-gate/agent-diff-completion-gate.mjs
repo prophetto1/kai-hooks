@@ -26,6 +26,7 @@ import {
   touchedDomains,
   writeJson,
 } from '../quality-completion-gate/quality-gate-core.mjs';
+import { pathLocApplicable } from './agent-diff-policy.mjs';
 import {
   detectFraudulentVerificationInTelemetry,
   isFraudulentVerificationCommand,
@@ -130,14 +131,7 @@ function positive(value) {
 }
 
 function ruleTriggered(trigger, fileCount, locTotal) {
-  const mode = TRIGGER_MODES.has(trigger?.mode) ? trigger.mode : 'files-or-loc';
-  const fileHit = positive(trigger?.minChangedFiles) && fileCount >= trigger.minChangedFiles;
-  const locHit = positive(trigger?.minChangedLoc) && locTotal >= trigger.minChangedLoc;
-
-  if (mode === 'files') return fileHit;
-  if (mode === 'loc') return locHit;
-  if (mode === 'files-and-loc') return fileHit && locHit;
-  return fileHit || locHit;
+  return pathLocApplicable(trigger, fileCount, locTotal);
 }
 
 function largeLocMin(policy, settings) {
@@ -618,7 +612,12 @@ function evaluate(input, runtime) {
   const policy = repoPolicy(settings, repoRoot);
   if (!policy || policy.enabled === false) return { continue: true };
 
-  const filesResult = changedFiles(repoRoot, gitTimeout);
+  const policyFiles = Array.isArray(input.taskPolicy?.taskChangedFiles)
+    ? input.taskPolicy.taskChangedFiles
+    : null;
+  const filesResult = policyFiles
+    ? { ok: true, value: policyFiles }
+    : changedFiles(repoRoot, gitTimeout);
   if (!filesResult.ok || !filesResult.value.length) {
     writeState(statePath(settings, sessionId, repoRoot), {});
     return { continue: true };

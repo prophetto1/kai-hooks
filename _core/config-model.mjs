@@ -130,6 +130,20 @@ function definitions() {
           },
         }),
         stopwords: ref('nonEmptyString'),
+        taskPolicy: objectSchema({
+          properties: {
+            schemaVersion: ref('positiveInteger'),
+            stateDir: ref('nonEmptyString'),
+            maxObjectiveChars: ref('positiveInteger'),
+            maxDecisionRecords: ref('positiveInteger'),
+            decisionRetentionDays: { type: 'integer', minimum: 0 },
+            continuationPhrases: ref('stringArray'),
+            commandClassPatterns: objectSchema({ additionalProperties: { type: 'array', items: { type: 'string' } } }),
+            defaultDispositions: objectSchema({ additionalProperties: { enum: ['block', 'report-only'] } }),
+            integrityPolicyId: ref('nonEmptyString'),
+          },
+          patternProperties: { '^_': true },
+        }),
       },
       ...noteFields(),
     }),
@@ -946,6 +960,30 @@ function validatePlanningStartGate(config, errors) {
   pushIf(errors, !(hook.enabled === true && isObject(tel) && tel.enabled === false), 'planning-start-gate.enabled requires hook-telemetry.enabled');
 }
 
+function validateSharedTaskPolicy(config, errors) {
+  const tp = config.shared?.taskPolicy;
+  if (tp === undefined) return;
+  pushIf(errors, isObject(tp), 'shared.taskPolicy must be an object when present');
+  if (!isObject(tp)) return;
+  pushIf(errors, tp.schemaVersion === undefined || positiveInteger(tp.schemaVersion), 'shared.taskPolicy.schemaVersion invalid');
+  pushIf(errors, tp.stateDir === undefined || (typeof tp.stateDir === 'string' && tp.stateDir.length > 0), 'shared.taskPolicy.stateDir must be a non-empty string when present');
+  pushIf(errors, tp.maxObjectiveChars === undefined || positiveInteger(tp.maxObjectiveChars), 'shared.taskPolicy.maxObjectiveChars invalid');
+  pushIf(errors, tp.maxDecisionRecords === undefined || positiveInteger(tp.maxDecisionRecords), 'shared.taskPolicy.maxDecisionRecords invalid');
+  pushIf(errors, tp.decisionRetentionDays === undefined || (Number.isInteger(tp.decisionRetentionDays) && tp.decisionRetentionDays >= 0), 'shared.taskPolicy.decisionRetentionDays invalid');
+  pushIf(errors, tp.integrityPolicyId === undefined || (typeof tp.integrityPolicyId === 'string' && tp.integrityPolicyId.length > 0), 'shared.taskPolicy.integrityPolicyId must be a non-empty string when present');
+}
+
+function validateTaskPolicyGuard(config, errors) {
+  const hook = hookById(config, 'task-policy-guard');
+  if (!isObject(hook)) return; // optional in config; runtime validator enforces presence in managed wiring
+  pushIf(errors, hook.event === 'PreToolUse', 'task-policy-guard.event must be PreToolUse');
+  pushIf(errors, hook.script?.path === 'task-policy/task-policy-guard.mjs', 'task-policy-guard.script.path mismatch');
+  pushIf(errors, hook.failPolicy === 'open', 'task-policy-guard.failPolicy must be open (fail-open for non-matched tools)');
+  pushIf(errors, isObject(hookById(config, 'task-mode-gate')), 'task-policy-guard requires hooks[id=task-mode-gate]');
+  pushIf(errors, isObject(hookById(config, 'planning-start-gate')), 'task-policy-guard requires hooks[id=planning-start-gate]');
+  pushIf(errors, isObject(scriptById(config, 'stop-completion-chain')), 'task-policy-guard requires scripts[id=stop-completion-chain]');
+}
+
 function validateQualityCompletionGate(config, errors) {
   const hook = hookById(config, 'quality-completion-gate');
   pushIf(errors, isObject(hook), 'missing hooks[id=quality-completion-gate]');
@@ -1245,6 +1283,8 @@ export function validateConfig(config) {
   validateThinkingGate(config, errors);
   validateTaskModeGate(config, errors);
   validatePlanningStartGate(config, errors);
+  validateSharedTaskPolicy(config, errors);
+  validateTaskPolicyGuard(config, errors);
   validateQualityCompletionGate(config, errors);
   validateAgentDiffCompletionGate(config, errors);
   validateMemoryHarvester(config, errors);

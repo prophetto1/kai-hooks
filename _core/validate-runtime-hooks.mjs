@@ -220,6 +220,26 @@ function parseCodexStopHookEntries(source) {
   return entries;
 }
 
+/** Extract every statusMessage declared within the [[hooks.Stop]] section. */
+export function codexStopStatusMessages(source) {
+  const out = [];
+  let inStop = false;
+  for (const rawLine of String(source || '').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (/^\[\[hooks\.Stop\]\]$/.test(line)) { inStop = true; continue; }
+    if (/^\[\[hooks\.[^\]]+\]\]$/.test(line) && !/^\[\[hooks\.Stop(?:\.hooks)?\]\]$/.test(line)) { inStop = false; continue; }
+    if (!inStop) continue;
+    const match = line.match(/^statusMessage\s*=\s*"([^"]*)"/);
+    if (match) out.push(match[1]);
+  }
+  return out;
+}
+
+/** A neutral Stop status must not claim specific gates that may not run. */
+export function isNeutralStopStatus(message) {
+  return !/\b(playwright|review|quality|completion gates)\b/i.test(String(message || ''));
+}
+
 function validateCodexStopWiring(config) {
   const errors = [];
   const stepTimeoutMs = (config.scripts || [])
@@ -255,6 +275,16 @@ function validateCodexStopWiring(config) {
       Number(managedEntries[0]?.timeout) >= minimumTimeoutSeconds,
       `${path}: Codex stop-completion-chain timeout must be at least ${minimumTimeoutSeconds}s`,
     );
+
+    // Neutral static status: a managed Stop must not claim gates that policy may
+    // skip. Enforced for both repo example wiring and live runtime configs.
+    for (const status of codexStopStatusMessages(source)) {
+      add(
+        errors,
+        isNeutralStopStatus(status),
+        `${path}: Codex Stop statusMessage must be neutral (no gate-name claims); got "${status}"`,
+      );
+    }
   }
 
   return errors;
@@ -296,4 +326,8 @@ function main() {
   return 0;
 }
 
-process.exitCode = main();
+import { fileURLToPath } from 'node:url';
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  process.exitCode = main();
+}

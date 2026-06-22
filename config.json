@@ -37,7 +37,17 @@
       "retiredTags": ["global", "untagged"]
     },
 
-    "stopwords": "a an the and or but if then else for to of in on at by with from into over under is are was were be been being do does did done have has had will would can could should may might must this that these those it its as we you they he she them our your their what when where why how which who whom not no yes ok okay today now here there about out up down off so just like get got need want try also use using used make made making go going gone work working please thanks let lets sure really very more most one two new add added update updated change changed thing things stuff way ways back next first last"
+    "stopwords": "a an the and or but if then else for to of in on at by with from into over under is are was were be been being do does did done have has had will would can could should may might must this that these those it its as we you they he she them our your their what when where why how which who whom not no yes ok okay today now here there about out up down off so just like get got need want try also use using used make made making go going gone work working please thanks let lets sure really very more most one two new add added update updated change changed thing things stuff way ways back next first last",
+
+    "taskPolicy": {
+      "schemaVersion": 1,
+      "stateDir": "E:/hooks/.state/task-policy",
+      "maxObjectiveChars": 280,
+      "maxDecisionRecords": 200,
+      "decisionRetentionDays": 14,
+      "integrityPolicyId": "verification-integrity",
+      "_doc": "Active Task Envelope + Stop policy tunables. See _briefs/2026-06-21-stop-task-policy-control-plane-implementation-plan.md. Phrase/class patterns default in task-policy/task-policy-core.mjs unless overridden here."
+    }
   },
 
   "hooks": [
@@ -267,6 +277,22 @@
     },
 
     {
+      "id": "task-policy-guard",
+      "name": "Task Policy Guard",
+      "description": "PreToolUse: enforce the Active Task Envelope's explicit restrictions (read-only mutations, forbidden scopes, and heavy browser/full-suite commands). Denies only what the active task explicitly forbids; fail-open for ordinary read-only tools.",
+      "category": "gate",
+      "event": "PreToolUse",
+      "match": { "tools": ["*"] },
+      "script": { "path": "task-policy/task-policy-guard.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "open",
+      "settings": {
+        "_doc": "E:/hooks/_briefs/2026-06-21-stop-task-policy-control-plane-implementation-plan.md"
+      }
+    },
+
+    {
       "id": "memory-harvester",
       "name": "Stop Memory Harvester",
       "description": "Stop hook that scans the recent session transcript and writes durable facts into SQLite memory. Stop fires after every assistant response, but runAfterNewExchanges controls extraction cadence and reviewLastExchanges controls the review window. Default extraction uses a local Codex subscription proxy (no Platform API key). Fail-open; never blocks completion.",
@@ -283,6 +309,13 @@
         "reviewLastExchanges": 4,
         "runAfterNewExchanges": 4,
         "maxCandidatesPerStop": 6,
+        "vectorStore": {
+          "_doc": "Store harvester rows through mcp-memory-service sqlite_vec so each memory has an embedding. Hindsight remains disabled until backfill/cutover is ready.",
+          "enabled": true,
+          "bridgePython": "C:/Users/jwchu/AppData/Roaming/uv/tools/mcp-memory-service/Scripts/python.exe",
+          "embeddingModel": "BAAI/bge-small-en-v1.5",
+          "timeoutMs": 180000
+        },
         "existingMemoryContext": {
           "_doc": "Before Spark decides what to retain, retrieve related active SQLite memories so it can emit insert/skip/supersede operations instead of blindly appending rows.",
           "enabled": true,
@@ -341,7 +374,7 @@
             "ensureScript": "E:/hooks/codex-proxy/ensure-codex-proxy.ps1"
           }
         },
-        "_note": "Runs first inside stop-completion-chain. Inserts memories + FTS rows only; vector embeddings remain owned by memory-vector."
+        "_note": "Runs first inside stop-completion-chain. Stores through the sqlite_vec bridge so memory rows and vector embeddings are created together; Hindsight remains secondary/off."
       }
     },
 

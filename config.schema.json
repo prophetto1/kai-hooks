@@ -194,6 +194,55 @@
         },
         "stopwords": {
           "$ref": "#/$defs/nonEmptyString"
+        },
+        "taskPolicy": {
+          "type": "object",
+          "properties": {
+            "schemaVersion": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "stateDir": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "maxObjectiveChars": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "maxDecisionRecords": {
+              "$ref": "#/$defs/positiveInteger"
+            },
+            "decisionRetentionDays": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "continuationPhrases": {
+              "$ref": "#/$defs/stringArray"
+            },
+            "commandClassPatterns": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "defaultDispositions": {
+              "type": "object",
+              "additionalProperties": {
+                "enum": [
+                  "block",
+                  "report-only"
+                ]
+              }
+            },
+            "integrityPolicyId": {
+              "$ref": "#/$defs/nonEmptyString"
+            }
+          },
+          "patternProperties": {
+            "^_": true
+          },
+          "additionalProperties": false
         }
       },
       "patternProperties": {
