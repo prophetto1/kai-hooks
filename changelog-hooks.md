@@ -10,6 +10,15 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-27 - Stop unchanged-blocker loop break
+
+- Fixed `stop-completion-chain` unchanged-blocker suppression so a previously
+  recorded blocking quality failure is not re-run and does not re-block Stop on
+  identical input. The first failure remains recorded; repeated Stops now emit a
+  report-only factual message instead of feeding a hook prompt loop.
+- Updated the Stop policy integration regression so the repeated unchanged
+  blocker case asserts both no executor rerun and no second blocking decision.
+
 ### 2026-06-27 - Merge quality and risk Stop gates
 
 - Added `completion-quality-gate/` as the single Stop-chain gate for required

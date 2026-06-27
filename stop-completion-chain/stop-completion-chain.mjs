@@ -329,12 +329,14 @@ export function evaluate(input) {
     // Unchanged-blocker suppression: do not re-run a known blocker on continuation.
     const prior = unchangedFailure(tpConfig, sessionId, repoRoot, gate.gate, fp);
     if (prior.seen) {
-      messages.push(`Stop policy: ${gate.gate} unchanged blocker reported without rerun.`);
-      const blocking = gate.failureDisposition === 'block';
-      decisionGates.push({ ...gate, blocking, failureFingerprint: fp, reasonCodes: [...gate.reasonCodes, 'unchanged-suppressed'] });
-      if (blocking && !blockMessage) {
-        blockMessage = `${HARD_NON_REDIRECT}\n${gate.gate} previously failed on unchanged input and was not rerun. Resolve it or change the task.`;
-      }
+      messages.push(
+        [
+          `Stop policy: ${gate.gate} unchanged blocker already reported; executor was not rerun.`,
+          HARD_NON_REDIRECT,
+          `${gate.gate} previously failed on unchanged input. The prior blocking decision remains recorded; this repeated Stop is report-only.`,
+        ].join('\n'),
+      );
+      decisionGates.push({ ...gate, blocking: false, failureFingerprint: fp, reasonCodes: [...gate.reasonCodes, 'unchanged-suppressed'] });
       continue;
     }
 

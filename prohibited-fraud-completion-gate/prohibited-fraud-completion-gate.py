@@ -37,7 +37,7 @@ RULES = [
             r"persistQueryClient|persistedQueryClient|inMemory|memoryFallback)\b.*\b("
             r"workspace|tenant|auth|session|chat|api|scope|store|library|asset|metadata|"
             r"agent|skill|provider|model|profile|operator|role|permission|runtime|health|"
-            r"verification|evidence|settings)\b|"
+            r"verification|evidence|settings)[A-Za-z0-9_ -]*\b|"
             r"\b(workspace|tenant|auth|session|chat|api|scope|store|library|asset|metadata|"
             r"agent|skill|provider|model|profile|operator|role|permission|runtime|health|"
             r"verification|evidence|settings)\b.*\b(localStorage|sessionStorage|indexedDB|"
@@ -114,7 +114,7 @@ RULES = [
         "regex": (
             r"\b(assigned|selected|current|active)[A-Za-z0-9_]*(Model|Provider|Profile|"
             r"Workspace|Tenant|Session|User|Role|Setting)?\b\s*(\|\||\?\?)\s*\b(default|"
-            r"fallback|local)\b|"
+            r"fallback|local)[A-Za-z0-9_]*\b|"
             r"\bexcept\b.*\breturn\b.*\b(default|fallback|local)\b|"
             r"\bcatch\b.*\breturn\b.*\b(default|fallback|local)\b"
         ),
@@ -281,6 +281,10 @@ def configured_documents(settings: dict) -> list[dict]:
     return out
 
 
+def compact_ws(text: str) -> str:
+    return " ".join(text.split())
+
+
 def check_documents(settings: dict) -> list[dict]:
     findings = []
     required = settings.get("requiredPhrases") or []
@@ -294,8 +298,12 @@ def check_documents(settings: dict) -> list[dict]:
         except Exception as exc:
             findings.append({"repo": doc["repo"], "path": doc["absolute"], "issue": f"unreadable document: {exc}"})
             continue
+        text_lower = text.lower()
+        compact_text_lower = compact_ws(text).lower()
         for phrase in required:
-            if phrase not in text:
+            phrase_lower = phrase.lower()
+            compact_phrase_lower = compact_ws(phrase).lower()
+            if phrase_lower not in text_lower and compact_phrase_lower not in compact_text_lower:
                 findings.append({
                     "repo": doc["repo"],
                     "path": doc["absolute"],
@@ -314,14 +322,18 @@ def target_for_repo(root: str | None, settings: dict) -> dict | None:
     return None
 
 
-def pathspecs(extensions: list[str]) -> list[str]:
-    return [f"*.{str(ext).lstrip('.')}" for ext in (extensions or ["ts", "tsx", "js", "py", "md"])]
+def allowed_extensions(extensions: list[str]) -> set[str]:
+    return {f".{str(ext).lstrip('.').lower()}" for ext in (extensions or ["ts", "tsx", "js", "py", "md"])}
+
+
+def has_allowed_extension(path: str, extensions: set[str]) -> bool:
+    return Path(path).suffix.lower() in extensions
 
 
 def added_lines(repo: str, extensions: list[str]) -> list[tuple[str, int, str]]:
     added: list[tuple[str, int, str]] = []
-    specs = pathspecs(extensions)
-    code, stdout, _stderr = git(repo, "diff", "--unified=0", "HEAD", "--", *specs, timeout=20)
+    allowed = allowed_extensions(extensions)
+    code, stdout, _stderr = git(repo, "diff", "--unified=0", "HEAD", timeout=20)
     diff = stdout if code == 0 else ""
     path = None
     new_line = 0
@@ -333,18 +345,20 @@ def added_lines(repo: str, extensions: list[str]) -> list[tuple[str, int, str]]:
             match = re.search(r"\+(\d+)", line)
             new_line = int(match.group(1)) if match else 0
         elif line.startswith("+") and not line.startswith("+++"):
-            if path:
+            if path and has_allowed_extension(path, allowed):
                 added.append((norm(path), new_line, line[1:]))
             new_line += 1
         elif line.startswith(" "):
             new_line += 1
 
-    code, stdout, _stderr = git(repo, "ls-files", "--others", "--exclude-standard", "--", *specs, timeout=20)
+    code, stdout, _stderr = git(repo, "ls-files", "--others", "--exclude-standard", timeout=20)
     if code != 0:
         return added
     for rel in stdout.splitlines():
         rel = rel.strip()
         if not rel:
+            continue
+        if not has_allowed_extension(rel, allowed):
             continue
         full = Path(repo) / rel
         try:

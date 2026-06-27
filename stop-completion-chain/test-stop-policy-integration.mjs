@@ -250,7 +250,8 @@ test('unchanged-blocker-is-not-rerun', () => {
     const second = runChain(env, env.repo, 's7');
     const countAfterSecond = readFileSync(countPath, 'utf8');
     assert.equal(countAfterSecond, countAfterFirst, 'command must NOT run again on unchanged blocker');
-    assert.ok(/not rerun|unchanged input/i.test(second.reason || second.systemMessage || ''), 'second run reports unchanged blocker without rerun: ' + JSON.stringify(second));
+    assert.equal(second.decision, undefined, 'unchanged blocker repeat must not re-block Stop: ' + JSON.stringify(second));
+    assert.ok(/not rerun|unchanged input|report-only/i.test(second.systemMessage || ''), 'second run reports unchanged blocker without rerun: ' + JSON.stringify(second));
   } finally { rmSync(env.dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 });
 
