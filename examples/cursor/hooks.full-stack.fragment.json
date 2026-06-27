@@ -15,6 +15,10 @@
         "matcher": "Shell|Write|Delete|Edit|Task|NotebookEdit|apply_patch|MCP:ctx_batch_execute|MCP:ctx_execute|MCP:ctx_execute_file"
       },
       {
+        "command": "node E:/hooks/adapters/cursor/run-hook.mjs preToolUse E:/hooks/task-policy/task-policy-guard.mjs",
+        "matcher": "Shell|Write|Delete|Edit|Task|NotebookEdit|apply_patch|MCP:ctx_batch_execute|MCP:ctx_execute|MCP:ctx_execute_file"
+      },
+      {
         "command": "node E:/hooks/adapters/cursor/run-hook.mjs preToolUse E:/hooks/thinking-gate/thinking-gate.py"
       },
       {

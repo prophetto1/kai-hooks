@@ -46,10 +46,13 @@ const READ_ONLY_SHELL_BINARIES = new Set([
   'realpath', 'whoami', 'hostname', 'date', 'env', 'printenv', 'diff', 'less', 'more',
   'file', 'column', 'nl', 'find', 'true', 'test',
 ]);
+// Only git subcommands that are read-only in every form. Subcommands with common
+// mutating forms (branch/tag/remote/config/stash/checkout/...) are intentionally
+// excluded so a read-only task cannot create branches/tags/remotes or write config.
 const GIT_READ_SUBCOMMANDS = new Set([
-  'status', 'log', 'diff', 'show', 'rev-parse', 'branch', 'ls-files', 'ls-tree', 'blame',
-  'describe', 'config', 'remote', 'tag', 'cat-file', 'shortlog', 'reflog', 'for-each-ref',
-  'symbolic-ref', 'rev-list', 'name-rev', 'whatchanged', 'grep', 'count-objects', 'help',
+  'status', 'log', 'diff', 'show', 'rev-parse', 'ls-files', 'ls-tree', 'blame',
+  'describe', 'cat-file', 'shortlog', 'for-each-ref', 'rev-list', 'name-rev',
+  'whatchanged', 'grep', 'count-objects', 'help',
 ]);
 
 function shellSegments(command) {
@@ -78,6 +81,7 @@ export function shellIsReadOnlySafe(command) {
     if (head === 'git') {
       const sub = segment.match(/\bgit\b(?:\s+-C\s+(?:"[^"]*"|'[^']*'|\S+))?(?:\s+-[^\s]+)*\s+([a-z][a-z-]*)/i);
       if (!sub || !GIT_READ_SUBCOMMANDS.has(sub[1].toLowerCase())) return false;
+      if (/--output\b/i.test(segment)) return false; // e.g. `git diff --output file` writes a file
       continue;
     }
     if (head === 'find' && /(?:^|\s)-(?:delete|exec|execdir|fprint|fls|ok)\b/.test(segment)) return false;

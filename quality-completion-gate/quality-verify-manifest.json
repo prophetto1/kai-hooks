@@ -765,6 +765,8 @@
                 "memory-harvester/",
                 "memory-sync/",
                 "memory-normalizer/",
+                "completion-quality-gate/",
+                "prohibited-fraud-completion-gate/",
                 "quality-completion-gate/",
                 "agent-diff-completion-gate/",
                 "auth-slot-lease/",
@@ -814,6 +816,26 @@
               "command": "node quality-completion-gate/test-config-model.mjs",
               "timeoutMs": 30000,
               "id": "hooks-config-model-tests",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks prohibited fraud completion gate self-test",
+              "command": "python prohibited-fraud-completion-gate/prohibited-fraud-completion-gate.py --self-test",
+              "timeoutMs": 30000,
+              "id": "hooks-prohibited-fraud-completion-gate-self-test",
+              "classes": [
+                "quality",
+                "targeted"
+              ]
+            },
+            {
+              "label": "hooks completion quality gate tests",
+              "command": "node completion-quality-gate/test-completion-quality-gate.mjs",
+              "timeoutMs": 30000,
+              "id": "hooks-completion-quality-gate-tests",
               "classes": [
                 "quality",
                 "targeted"
@@ -981,7 +1003,7 @@
             },
             {
               "label": "hooks python compile",
-              "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py memory-harvester/harvest_core.py memory-harvester/harvest_hindsight.py memory-harvester/harvest_llm.py memory-harvester/harvest-stop.py memory-harvester/eval-harvest-quality.py memory-harvester/test-harvest-readonly.py memory-harvester/test-harvest-hindsight-readonly.py memory-harvester/test-harvest-llm-readonly.py memory-harvester/test-harvest-eval-readonly.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py",
+              "command": "python -m py_compile _core/hook_runtime.py _core/test-hook-runtime.py hook-telemetry/log-event.py loop-safety/loop-guard.py memory-normalizer/memory_retain.py memory-normalizer/normalize-after-store.py memory-normalizer/normalize-memory-tags.py memory-normalizer/maintain-existing-memories.py memory-normalizer/test-memory-runtime.py memory-normalizer/test-normalize-memory-tags-readonly.py memory-normalizer/test-maintain-readonly.py memory-harvester/harvest_core.py memory-harvester/harvest_hindsight.py memory-harvester/harvest_llm.py memory-harvester/harvest-stop.py memory-harvester/eval-harvest-quality.py memory-harvester/test-harvest-readonly.py memory-harvester/test-harvest-hindsight-readonly.py memory-harvester/test-harvest-llm-readonly.py memory-harvester/test-harvest-eval-readonly.py prohibited-fraud-completion-gate/prohibited-fraud-completion-gate.py thinking-gate/thinking-gate.py thinking-gate/test-thinking-gate.py inject-protocol/index-skills.py inject-protocol/recall.py inject-protocol/suggest.py inject-protocol/test-recall-readonly.py inject-protocol/test-suggest-readonly.py inject-protocol/test-index-skills.py hook-telemetry/test-log-event.py",
               "timeoutMs": 30000,
               "id": "hooks-python-compile",
               "classes": [
@@ -1001,7 +1023,7 @@
             },
             {
               "label": "hooks node syntax",
-              "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check hook-dev-tools/test-hook.mjs && node --check hook-dev-tools/test-hook-dev-tools.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check auth-slot-lease/claim-auth-slot.mjs && node --check auth-slot-lease/release-auth-slot.mjs && node --check auth-slot-lease/test-auth-slot-lease.mjs && node --check stop-completion-chain/stop-completion-chain.mjs && node --check stop-completion-chain/test-stop-completion-chain.mjs && node --check task-policy/task-policy-core.mjs && node --check task-policy/task-policy-guard.mjs && node --check task-policy/test-task-policy-core.mjs && node --check task-policy/test-task-policy-guard.mjs && node --check agent-diff-completion-gate/agent-diff-policy.mjs && node --check stop-completion-chain/test-stop-policy-integration.mjs",
+              "command": "node --check _core/config-model.mjs && node --check _core/generate-config-schema.mjs && node --check _core/validate-runtime-hooks.mjs && node --check inject-protocol/inject-core.mjs && node --check inject-protocol/test-inject-protocol-core.mjs && node --check inject-protocol/test-inject-protocol-self-test.mjs && node --check inject-protocol/inject-protocol.mjs && node --check hook-dev-tools/test-hook.mjs && node --check hook-dev-tools/test-hook-dev-tools.mjs && node --check completion-quality-gate/completion-quality-core.mjs && node --check completion-quality-gate/completion-quality-gate.mjs && node --check completion-quality-gate/test-completion-quality-gate.mjs && node --check quality-completion-gate/quality-completion-gate.mjs && node --check quality-completion-gate/quality-gate-core.mjs && node --check quality-completion-gate/test-config-model.mjs && node --check quality-completion-gate/test-quality-gate-core.mjs && node --check agent-diff-completion-gate/agent-diff-completion-gate.mjs && node --check agent-diff-completion-gate/test-agent-diff-completion-gate.mjs && node --check auth-slot-lease/claim-auth-slot.mjs && node --check auth-slot-lease/release-auth-slot.mjs && node --check auth-slot-lease/test-auth-slot-lease.mjs && node --check stop-completion-chain/stop-completion-chain.mjs && node --check stop-completion-chain/test-stop-completion-chain.mjs && node --check task-policy/task-policy-core.mjs && node --check task-policy/task-policy-guard.mjs && node --check task-policy/test-task-policy-core.mjs && node --check task-policy/test-task-policy-guard.mjs && node --check agent-diff-completion-gate/agent-diff-policy.mjs && node --check stop-completion-chain/test-stop-policy-integration.mjs",
               "timeoutMs": 30000,
               "id": "hooks-node-syntax",
               "classes": [

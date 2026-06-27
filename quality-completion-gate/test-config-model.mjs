@@ -210,6 +210,26 @@ delete disabledRepo.verification;
 const disabledAgentDiffRepoResult = validateConfig(disabledAgentDiffRepo);
 assert.deepEqual(disabledAgentDiffRepoResult.errors, [], 'disabled agent-diff repo may omit rules and verification');
 
+const badCompletionQualityFailPolicy = structuredClone(config);
+hookById(badCompletionQualityFailPolicy, 'completion-quality-gate').failPolicy = 'open';
+const badCompletionQualityFailPolicyResult = validateConfig(badCompletionQualityFailPolicy);
+assert.ok(
+  badCompletionQualityFailPolicyResult.errors.some((error) =>
+    error.includes('completion-quality-gate.failPolicy must be closed')
+  ),
+  'completion-quality-gate must be fail-closed'
+);
+
+const badCompletionQualityPhaseScript = structuredClone(config);
+hookById(badCompletionQualityPhaseScript, 'completion-quality-gate').settings.riskScript = 'agent-diff-completion-gate/wrong.mjs';
+const badCompletionQualityPhaseScriptResult = validateConfig(badCompletionQualityPhaseScript);
+assert.ok(
+  badCompletionQualityPhaseScriptResult.errors.some((error) =>
+    error.includes('completion-quality-gate settings.riskScript mismatch')
+  ),
+  'completion-quality-gate must point at the expected risk phase executor'
+);
+
 const badStopChainStepTimeout = structuredClone(config);
 scriptById(badStopChainStepTimeout, 'stop-completion-chain').settings.stepTimeoutMs = 0;
 const badStopChainStepTimeoutResult = validateConfig(badStopChainStepTimeout);
@@ -227,6 +247,74 @@ assert.ok(
     error.includes('stop-completion-chain settings.stepTimeoutMs must exceed quality-completion-gate settings.totalBudgetMs')
   ),
   'stop-completion-chain step timeout must exceed the inner quality gate budget'
+);
+
+const badStopChainCompletionQualityBudgetOrder = structuredClone(config);
+scriptById(badStopChainCompletionQualityBudgetOrder, 'stop-completion-chain').settings.stepTimeoutMs =
+  hookById(badStopChainCompletionQualityBudgetOrder, 'completion-quality-gate').settings.phaseTimeoutMs;
+const badStopChainCompletionQualityBudgetOrderResult = validateConfig(badStopChainCompletionQualityBudgetOrder);
+assert.ok(
+  badStopChainCompletionQualityBudgetOrderResult.errors.some((error) =>
+    error.includes('stop-completion-chain settings.stepTimeoutMs must exceed completion-quality-gate settings.phaseTimeoutMs')
+  ),
+  'stop-completion-chain step timeout must exceed the merged completion-quality phase timeout'
+);
+
+const legacyQualityInStopChain = structuredClone(config);
+scriptById(legacyQualityInStopChain, 'stop-completion-chain').settings.chain.push('quality-completion-gate');
+const legacyQualityInStopChainResult = validateConfig(legacyQualityInStopChain);
+assert.ok(
+  legacyQualityInStopChainResult.errors.some((error) =>
+    error.includes('stop-completion-chain settings.chain must not include legacy quality-completion-gate')
+  ),
+  'legacy quality/agent-diff gates must not be direct Stop-chain entries'
+);
+
+const missingProhibitedFraudHook = structuredClone(config);
+missingProhibitedFraudHook.hooks = missingProhibitedFraudHook.hooks.filter((hook) => hook.id !== 'prohibited-fraud-completion-gate');
+const missingProhibitedFraudHookResult = validateConfig(missingProhibitedFraudHook);
+assert.ok(
+  missingProhibitedFraudHookResult.errors.some((error) => error.includes('missing hooks[id=prohibited-fraud-completion-gate]')),
+  'prohibited fraud completion gate must be present'
+);
+
+const badProhibitedFraudFailPolicy = structuredClone(config);
+hookById(badProhibitedFraudFailPolicy, 'prohibited-fraud-completion-gate').failPolicy = 'open';
+const badProhibitedFraudFailPolicyResult = validateConfig(badProhibitedFraudFailPolicy);
+assert.ok(
+  badProhibitedFraudFailPolicyResult.errors.some((error) =>
+    error.includes('prohibited-fraud-completion-gate.failPolicy must be closed')
+  ),
+  'prohibited fraud completion gate must be fail-closed'
+);
+
+const badProhibitedFraudDocuments = structuredClone(config);
+hookById(badProhibitedFraudDocuments, 'prohibited-fraud-completion-gate').settings.documents =
+  hookById(badProhibitedFraudDocuments, 'prohibited-fraud-completion-gate').settings.documents.filter((doc) => doc.repo !== 'dbase');
+const badProhibitedFraudDocumentsResult = validateConfig(badProhibitedFraudDocuments);
+assert.ok(
+  badProhibitedFraudDocumentsResult.errors.some((error) =>
+    error.includes('prohibited-fraud-completion-gate settings.documents must list the five governed repos')
+  ),
+  'prohibited fraud completion gate must require all five repo documents'
+);
+
+const missingProhibitedFraudFromChain = structuredClone(config);
+scriptById(missingProhibitedFraudFromChain, 'stop-completion-chain').settings.chain =
+  scriptById(missingProhibitedFraudFromChain, 'stop-completion-chain').settings.chain.filter((id) => id !== 'prohibited-fraud-completion-gate');
+const missingProhibitedFraudFromChainResult = validateConfig(missingProhibitedFraudFromChain);
+assert.ok(
+  missingProhibitedFraudFromChainResult.errors.some((error) => error.includes('stop-completion-chain settings.chain must list existing hook ids')),
+  'stop completion chain must include prohibited-fraud-completion-gate'
+);
+
+const missingCompletionQualityFromChain = structuredClone(config);
+scriptById(missingCompletionQualityFromChain, 'stop-completion-chain').settings.chain =
+  scriptById(missingCompletionQualityFromChain, 'stop-completion-chain').settings.chain.filter((id) => id !== 'completion-quality-gate');
+const missingCompletionQualityFromChainResult = validateConfig(missingCompletionQualityFromChain);
+assert.ok(
+  missingCompletionQualityFromChainResult.errors.some((error) => error.includes('stop-completion-chain settings.chain must list existing hook ids')),
+  'stop completion chain must include completion-quality-gate'
 );
 
 const badThinkingTools = structuredClone(config);

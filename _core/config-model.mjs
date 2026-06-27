@@ -171,6 +171,14 @@ function definitions() {
           if: { properties: { id: { enum: ['agent-diff-completion-gate'] } } },
           then: { properties: { settings: ref('agentDiffSettings') } },
         },
+        {
+          if: { properties: { id: { enum: ['prohibited-fraud-completion-gate'] } } },
+          then: { properties: { settings: ref('prohibitedFraudSettings') } },
+        },
+        {
+          if: { properties: { id: { enum: ['completion-quality-gate'] } } },
+          then: { properties: { settings: ref('completionQualitySettings') } },
+        },
       ],
     }),
     script: objectSchema({
@@ -530,6 +538,38 @@ function definitions() {
         locLargeMin: ref('positiveInteger'),
         stateDir: ref('nonEmptyString'),
         repos: arrayOf(ref('agentDiffRepo')),
+      },
+      ...noteFields(),
+    }),
+    completionQualitySettings: objectSchema({
+      required: ['failureMode', 'phaseTimeoutMs', 'qualityScript', 'riskScript', 'authority'],
+      properties: {
+        failureMode: { enum: ['block'] },
+        phaseTimeoutMs: ref('positiveInteger'),
+        qualityScript: { const: 'quality-completion-gate/quality-completion-gate.mjs' },
+        riskScript: { const: 'agent-diff-completion-gate/agent-diff-completion-gate.mjs' },
+        authority: { const: 'single-stop-quality-risk-decision' },
+      },
+      ...noteFields(),
+    }),
+    prohibitedFraudDocument: objectSchema({
+      required: ['repo', 'root', 'path'],
+      properties: {
+        repo: ref('nonEmptyString'),
+        root: ref('nonEmptyString'),
+        path: ref('nonEmptyString'),
+      },
+      ...noteFields(),
+    }),
+    prohibitedFraudSettings: objectSchema({
+      required: ['failureMode', 'documentName', 'documents', 'requiredPhrases', 'scanExtensions', 'scanPathExcludes'],
+      properties: {
+        failureMode: { enum: ['block'] },
+        documentName: { const: 'PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md' },
+        documents: arrayOf(ref('prohibitedFraudDocument')),
+        requiredPhrases: ref('stringArray'),
+        scanExtensions: ref('stringArray'),
+        scanPathExcludes: ref('stringArray'),
       },
       ...noteFields(),
     }),
@@ -1239,11 +1279,19 @@ function validateStopCompletionChain(config, errors) {
   if (!isObject(script)) return;
   pushIf(errors, script.script?.path === 'stop-completion-chain/stop-completion-chain.mjs', 'stop-completion-chain.script.path mismatch');
   const chain = script.settings?.chain;
+  const requiredStopHooks = ['memory-harvester', 'prohibited-fraud-completion-gate', 'completion-quality-gate'];
   pushIf(
     errors,
-    nonEmptyStringArray(chain) && chain.includes('memory-harvester') && chain.every((id) => isObject(hookById(config, id))),
-    'stop-completion-chain settings.chain must list existing hook ids and include memory-harvester'
+    nonEmptyStringArray(chain) && requiredStopHooks.every((id) => chain.includes(id)) && chain.every((id) => isObject(hookById(config, id))),
+    'stop-completion-chain settings.chain must list existing hook ids and include memory-harvester, prohibited-fraud-completion-gate, and completion-quality-gate'
   );
+  if (Array.isArray(chain)) {
+    pushIf(
+      errors,
+      !chain.includes('quality-completion-gate') && !chain.includes('agent-diff-completion-gate'),
+      'stop-completion-chain settings.chain must not include legacy quality-completion-gate or agent-diff-completion-gate entries'
+    );
+  }
   const s = script.settings || {};
   pushIf(errors, positiveInteger(s.stepTimeoutMs), 'stop-completion-chain settings.stepTimeoutMs invalid');
   const qualityGate = hookById(config, 'quality-completion-gate');
@@ -1255,6 +1303,55 @@ function validateStopCompletionChain(config, errors) {
       'stop-completion-chain settings.stepTimeoutMs must exceed quality-completion-gate settings.totalBudgetMs'
     );
   }
+  const completionQualityGate = hookById(config, 'completion-quality-gate');
+  const completionPhaseTimeoutMs = completionQualityGate?.settings?.phaseTimeoutMs;
+  if (positiveInteger(s.stepTimeoutMs) && positiveInteger(completionPhaseTimeoutMs)) {
+    pushIf(
+      errors,
+      s.stepTimeoutMs > completionPhaseTimeoutMs,
+      'stop-completion-chain settings.stepTimeoutMs must exceed completion-quality-gate settings.phaseTimeoutMs'
+    );
+  }
+}
+
+function validateCompletionQualityGate(config, errors) {
+  const hook = hookById(config, 'completion-quality-gate');
+  pushIf(errors, isObject(hook), 'missing hooks[id=completion-quality-gate]');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'Stop', 'completion-quality-gate.event must be Stop');
+  pushIf(errors, hook.script?.path === 'completion-quality-gate/completion-quality-gate.mjs', 'completion-quality-gate.script.path mismatch');
+  pushIf(errors, hook.failPolicy === 'closed', 'completion-quality-gate.failPolicy must be closed');
+  const s = hook.settings || {};
+  pushIf(errors, s.failureMode === 'block', 'completion-quality-gate settings.failureMode must be block');
+  pushIf(errors, positiveInteger(s.phaseTimeoutMs), 'completion-quality-gate settings.phaseTimeoutMs invalid');
+  pushIf(errors, s.qualityScript === 'quality-completion-gate/quality-completion-gate.mjs', 'completion-quality-gate settings.qualityScript mismatch');
+  pushIf(errors, s.riskScript === 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', 'completion-quality-gate settings.riskScript mismatch');
+  pushIf(errors, s.authority === 'single-stop-quality-risk-decision', 'completion-quality-gate settings.authority mismatch');
+}
+
+function validateProhibitedFraudCompletionGate(config, errors) {
+  const hook = hookById(config, 'prohibited-fraud-completion-gate');
+  pushIf(errors, isObject(hook), 'missing hooks[id=prohibited-fraud-completion-gate]');
+  if (!isObject(hook)) return;
+  pushIf(errors, hook.event === 'Stop', 'prohibited-fraud-completion-gate.event must be Stop');
+  pushIf(errors, hook.script?.path === 'prohibited-fraud-completion-gate/prohibited-fraud-completion-gate.py', 'prohibited-fraud-completion-gate.script.path mismatch');
+  pushIf(errors, hook.failPolicy === 'closed', 'prohibited-fraud-completion-gate.failPolicy must be closed');
+  const s = hook.settings || {};
+  pushIf(errors, s.failureMode === 'block', 'prohibited-fraud-completion-gate settings.failureMode must be block');
+  pushIf(errors, s.documentName === 'PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md', 'prohibited-fraud-completion-gate settings.documentName mismatch');
+  pushIf(errors, Array.isArray(s.documents) && s.documents.length === 5, 'prohibited-fraud-completion-gate settings.documents must list the five governed repos');
+  const requiredRepos = ['jwc-global', 'kai-chattr', 'tfo', 'kai-agent', 'dbase'];
+  const docsByRepo = new Map(Array.isArray(s.documents) ? s.documents.map((doc) => [doc?.repo, doc]) : []);
+  for (const repo of requiredRepos) {
+    const doc = docsByRepo.get(repo);
+    pushIf(errors, isObject(doc), `prohibited-fraud-completion-gate settings.documents missing ${repo}`);
+    if (!isObject(doc)) continue;
+    pushIf(errors, typeof doc.root === 'string' && doc.root.length > 0, `prohibited-fraud-completion-gate ${repo}.root invalid`);
+    pushIf(errors, typeof doc.path === 'string' && doc.path.endsWith('PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md'), `prohibited-fraud-completion-gate ${repo}.path mismatch`);
+  }
+  pushIf(errors, Array.isArray(s.requiredPhrases) && s.requiredPhrases.length >= 17, 'prohibited-fraud-completion-gate settings.requiredPhrases must cover all prohibited classes');
+  pushIf(errors, nonEmptyStringArray(s.scanExtensions), 'prohibited-fraud-completion-gate settings.scanExtensions must be a non-empty string array');
+  pushIf(errors, nonEmptyStringArray(s.scanPathExcludes), 'prohibited-fraud-completion-gate settings.scanPathExcludes must be a non-empty string array');
 }
 
 function validateFrontendDesignGate(config, errors) {
@@ -1288,6 +1385,8 @@ export function validateConfig(config) {
   validateQualityCompletionGate(config, errors);
   validateAgentDiffCompletionGate(config, errors);
   validateMemoryHarvester(config, errors);
+  validateProhibitedFraudCompletionGate(config, errors);
+  validateCompletionQualityGate(config, errors);
   validateStopCompletionChain(config, errors);
   validateFrontendDesignGate(config, errors);
   validateSkillIndexer(config, errors);

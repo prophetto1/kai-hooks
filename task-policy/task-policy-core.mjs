@@ -45,7 +45,7 @@ export const COMMAND_CLASSES = [
   'targeted',
 ];
 
-export const GATES = ['quality-completion-gate', 'agent-diff-completion-gate'];
+export const GATES = ['completion-quality-gate'];
 
 export const DEFAULT_TASK_POLICY = {
   schemaVersion: ENVELOPE_SCHEMA_VERSION,
@@ -92,8 +92,7 @@ export const DEFAULT_TASK_POLICY = {
     ],
   },
   defaultDispositions: {
-    'quality-completion-gate': 'block',
-    'agent-diff-completion-gate': 'block',
+    'completion-quality-gate': 'block',
   },
   integrityPolicyId: 'verification-integrity',
 };
@@ -532,12 +531,15 @@ export function selectGates({ envelope, delta, qualityCommands = [], config = DE
 
   const gates = [];
 
-  // Quality executor.
+  // Completion-quality executor: quality commands + risk/live-verification policy.
   {
     const reasonCodes = [];
     let selection = 'run';
-    let failureDisposition = findingDisposition('quality-completion-gate');
+    let failureDisposition = findingDisposition('completion-quality-gate');
     const allowed = (qualityCommands || []).filter((cmd) => commandIsAllowed(classifyCommand(cmd, config), directives));
+    const browserSkipped = Boolean(activeDirective(directives, 'browser-verification'));
+    const hasQualityWork = allowed.length > 0;
+    const hasRiskWork = !browserSkipped;
     if (readOnly) {
       selection = 'skip';
       failureDisposition = 'none';
@@ -550,63 +552,24 @@ export function selectGates({ envelope, delta, qualityCommands = [], config = DE
       selection = 'skip';
       failureDisposition = 'none';
       reasonCodes.push('no-task-delta');
-    } else if (!allowed.length) {
+    } else if (!hasQualityWork && !hasRiskWork) {
       selection = 'skip';
       failureDisposition = 'none';
       reasonCodes.push((qualityCommands || []).length ? 'all-commands-filtered' : 'no-commands');
-    } else if (!applies('quality-completion-gate')) {
+    } else if (!applies('completion-quality-gate')) {
       selection = 'skip';
       failureDisposition = 'none';
       reasonCodes.push('not-applicable');
     } else {
       reasonCodes.push('task-relevant');
+      if (browserSkipped) reasonCodes.push('risk-phase-browser-skipped');
     }
     gates.push({
-      gate: 'quality-completion-gate',
+      gate: 'completion-quality-gate',
       selection,
       failureDisposition,
       reasonCodes,
       commandIds: allowed.map((cmd) => cmd.id).filter(Boolean),
-      blocking: false,
-      unrelatedFindings: [],
-    });
-  }
-
-  // Agent-diff (browser) executor.
-  {
-    const reasonCodes = [];
-    let selection = 'run';
-    let failureDisposition = findingDisposition('agent-diff-completion-gate');
-    const browserSkipped = Boolean(activeDirective(directives, 'browser-verification'));
-    if (readOnly) {
-      selection = 'skip';
-      failureDisposition = 'none';
-      reasonCodes.push('read-only');
-    } else if (browserSkipped) {
-      selection = 'skip';
-      failureDisposition = 'none';
-      reasonCodes.push('browser-skipped-not-run');
-    } else if (uncertain) {
-      selection = 'skip';
-      failureDisposition = 'none';
-      reasonCodes.push('policy-uncertain');
-    } else if (!hasDelta) {
-      selection = 'skip';
-      failureDisposition = 'none';
-      reasonCodes.push('no-task-delta');
-    } else if (!applies('agent-diff-completion-gate')) {
-      selection = 'skip';
-      failureDisposition = 'none';
-      reasonCodes.push('not-applicable');
-    } else {
-      reasonCodes.push('task-relevant');
-    }
-    gates.push({
-      gate: 'agent-diff-completion-gate',
-      selection,
-      failureDisposition,
-      reasonCodes,
-      commandIds: [],
       blocking: false,
       unrelatedFindings: [],
     });

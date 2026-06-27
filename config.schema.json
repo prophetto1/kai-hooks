@@ -374,6 +374,42 @@
               }
             }
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "enum": [
+                  "prohibited-fraud-completion-gate"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/prohibitedFraudSettings"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "enum": [
+                  "completion-quality-gate"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "settings": {
+                "$ref": "#/$defs/completionQualitySettings"
+              }
+            }
+          }
         }
       ],
       "additionalProperties": false
@@ -1289,6 +1325,102 @@
           "items": {
             "$ref": "#/$defs/agentDiffRepo"
           }
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "completionQualitySettings": {
+      "type": "object",
+      "required": [
+        "failureMode",
+        "phaseTimeoutMs",
+        "qualityScript",
+        "riskScript",
+        "authority"
+      ],
+      "properties": {
+        "failureMode": {
+          "enum": [
+            "block"
+          ]
+        },
+        "phaseTimeoutMs": {
+          "$ref": "#/$defs/positiveInteger"
+        },
+        "qualityScript": {
+          "const": "quality-completion-gate/quality-completion-gate.mjs"
+        },
+        "riskScript": {
+          "const": "agent-diff-completion-gate/agent-diff-completion-gate.mjs"
+        },
+        "authority": {
+          "const": "single-stop-quality-risk-decision"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "prohibitedFraudDocument": {
+      "type": "object",
+      "required": [
+        "repo",
+        "root",
+        "path"
+      ],
+      "properties": {
+        "repo": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "root": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "path": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "patternProperties": {
+        "^_": true
+      },
+      "additionalProperties": false
+    },
+    "prohibitedFraudSettings": {
+      "type": "object",
+      "required": [
+        "failureMode",
+        "documentName",
+        "documents",
+        "requiredPhrases",
+        "scanExtensions",
+        "scanPathExcludes"
+      ],
+      "properties": {
+        "failureMode": {
+          "enum": [
+            "block"
+          ]
+        },
+        "documentName": {
+          "const": "PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md"
+        },
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/prohibitedFraudDocument"
+          }
+        },
+        "requiredPhrases": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "scanExtensions": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "scanPathExcludes": {
+          "$ref": "#/$defs/stringArray"
         }
       },
       "patternProperties": {

@@ -430,7 +430,7 @@
     {
       "id": "quality-completion-gate",
       "name": "Quality Completion Gate",
-      "description": "Stop hook that computes the git diff, maps changed files through a verify manifest, runs the manifest commands, and gates only on exit codes.",
+      "description": "Phase executor used by completion-quality-gate. Computes changed domains, maps changed files through a verify manifest, runs manifest commands, and gates on exit codes.",
       "category": "gate",
       "event": "Stop",
       "match": { "tools": ["*"] },
@@ -450,9 +450,71 @@
     },
 
     {
+      "id": "prohibited-fraud-completion-gate",
+      "name": "Prohibited Fraud Completion Gate",
+      "description": "Stop hook that enforces the canonical prohibited fraudulent implementation methods document across JWC, KC, TFO, kai-agent, and DBASE, then scans current implementation diffs for prohibited source-of-truth, fake-state, fallback, and verification patterns.",
+      "category": "gate",
+      "event": "Stop",
+      "match": { "tools": ["*"] },
+      "script": { "path": "prohibited-fraud-completion-gate/prohibited-fraud-completion-gate.py", "runtime": "python" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "closed",
+      "settings": {
+        "failureMode": "block",
+        "documentName": "PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md",
+        "documents": [
+          { "repo": "jwc-global", "root": "E:/jwc-global", "path": "_governance/PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md" },
+          { "repo": "kai-chattr", "root": "E:/kai-chattr", "path": "_governance/PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md" },
+          { "repo": "tfo", "root": "E:/tfo", "path": "_governance/PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md" },
+          { "repo": "kai-agent", "root": "E:/kai-agent", "path": "governance/contracts/PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md" },
+          { "repo": "dbase", "root": "E:/dbase", "path": "_governance/PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md" }
+        ],
+        "requiredPhrases": [
+          "Browser storage as product authority",
+          "Browser storage for any of these",
+          "Default/fallback product identity",
+          "Fake product rows",
+          "Backend/API bypass",
+          "Tenant isolation shortcuts",
+          "Fake or misleading UI",
+          "Static runtime catalogs as authority",
+          "Silent fallback behavior",
+          "Verification fraud",
+          "Test fixture leakage",
+          "Client-only durable settings",
+          "Secrets/credentials shortcuts",
+          "Governance bypass",
+          "Cross-repo/path fabrication",
+          "Required Behavior Instead",
+          "if it scopes, authorizes, routes, mutates, verifies, persists, displays durable product state, or proves runtime behavior"
+        ],
+        "scanExtensions": ["ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "json", "md", "mdx"],
+        "scanPathExcludes": [
+          "**/node_modules/**",
+          "**/.next/**",
+          "**/dist/**",
+          "**/build/**",
+          "**/out/**",
+          "**/__pycache__/**",
+          "**/.venv/**",
+          "**/_extract_ref/**",
+          "**/references/**",
+          "**/___references*/**",
+          "**/vendor/**",
+          "**/PROHIBITED FRAUDULENT IMPLEMENTATION METHODS.md",
+          "**/CHANGELOG.md",
+          "**/changelog.md",
+          "**/changelog-hooks.md"
+        ],
+        "_note": "This is the canonical Stop hook for Jon's prohibited fraudulent implementation methods requirement. It checks document presence/content for all five repos and current changed lines in the active target repo."
+      }
+    },
+
+    {
       "id": "agent-diff-completion-gate",
       "name": "Agent Diff Completion Gate",
-      "description": "Stop gate for configured repo diff policies: matching changed files trip files-or-LOC thresholds, then live verification -> verification-before-completion; large LOC adds waza-hunt.",
+      "description": "Phase executor used by completion-quality-gate for configured repo diff policies: matching changed files trip files-or-LOC thresholds, then live verification -> verification-before-completion; large LOC adds waza-hunt.",
       "category": "gate",
       "event": "Stop",
       "match": { "tools": ["*"] },
@@ -503,6 +565,27 @@
     },
 
     {
+      "id": "completion-quality-gate",
+      "name": "Completion Quality Gate",
+      "description": "Merged Stop hook for required quality checks and implementation-risk/live-verification policy. Replaces separate quality-completion-gate and agent-diff-completion-gate Stop-chain entries while preserving those executors as internal phases.",
+      "category": "gate",
+      "event": "Stop",
+      "match": { "tools": ["*"] },
+      "script": { "path": "completion-quality-gate/completion-quality-gate.mjs", "runtime": "node" },
+      "scope": { "projects": ["*"], "paths": ["**"] },
+      "enabled": true,
+      "failPolicy": "closed",
+      "settings": {
+        "failureMode": "block",
+        "phaseTimeoutMs": 300000,
+        "qualityScript": "quality-completion-gate/quality-completion-gate.mjs",
+        "riskScript": "agent-diff-completion-gate/agent-diff-completion-gate.mjs",
+        "authority": "single-stop-quality-risk-decision",
+        "_note": "This is the only Stop-chain quality/risk gate. It passes the same task-policy changed-file list to the quality phase and risk/live-verification phase, then emits one completion decision."
+      }
+    },
+
+    {
       "id": "frontend-design-gate",
       "name": "Frontend Design Gate",
       "description": "Stop gate: block completion when the current change ADDS raw HTML primitives (<button>/<input>/<select>/<textarea>) in app code where the repo design system already provides a components/ui/<name>.tsx component. Changed-lines only (git diff vs HEAD + untracked), never the existing backlog. Reads git, not telemetry. Loop-safe (maxRepeatedBlocks) and fail-open.",
@@ -540,16 +623,16 @@
     {
       "id": "stop-completion-chain",
       "name": "Stop Completion Chain",
-      "description": "Canonical Stop orchestrator for Codex and Claude Code. Runs enabled completion gates in order: quality → agent-diff.",
+      "description": "Canonical Stop orchestrator for Codex and Claude Code. Runs enabled completion gates in order: prohibited-fraud -> completion-quality.",
       "category": "maintenance",
       "trigger": "runtime-wire",
       "script": { "path": "stop-completion-chain/stop-completion-chain.mjs", "runtime": "node" },
       "enabled": true,
       "settings": {
-        "chain": ["memory-harvester", "quality-completion-gate", "agent-diff-completion-gate"],
+        "chain": ["memory-harvester", "prohibited-fraud-completion-gate", "completion-quality-gate"],
         "failureMode": "block",
-        "stepTimeoutMs": 300000,
-        "_wireDoc": "memory-harvester runs as a fail-open pre-step before blocking gates."
+        "stepTimeoutMs": 600000,
+        "_wireDoc": "memory-harvester runs as a fail-open pre-step before blocking gates; prohibited-fraud and completion-quality are blocking completion gates."
       }
     },
 

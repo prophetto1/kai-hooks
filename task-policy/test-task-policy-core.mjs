@@ -298,34 +298,33 @@ check('selectGates: read-only skips all heavy gates', () => {
 
 check('selectGates: no delta skips heavy gates', () => {
   const gates = selectGates({ envelope: env([]), delta: { ok: true, uncertain: false, changedFiles: [], fingerprint: '' }, qualityCommands: QCMDS });
-  assert.equal(gates.find((g) => g.gate === 'quality-completion-gate').selection, 'skip');
-  assert.equal(gates.find((g) => g.gate === 'agent-diff-completion-gate').selection, 'skip');
+  assert.equal(gates.find((g) => g.gate === 'completion-quality-gate').selection, 'skip');
 });
 
 check('selectGates: full-suite directive filters full-suite command, keeps targeted', () => {
   const gates = selectGates({ envelope: env([{ kind: 'full-suite', value: 'skip' }]), delta: DELTA, qualityCommands: QCMDS });
-  const quality = gates.find((g) => g.gate === 'quality-completion-gate');
+  const quality = gates.find((g) => g.gate === 'completion-quality-gate');
   assert.equal(quality.selection, 'run');
   assert.deepEqual(quality.commandIds, ['carops.config-contract']);
 });
 
-check('selectGates: full-suite directive with only full-suite commands skips quality', () => {
+check('selectGates: full-suite directive with only full-suite commands still runs risk phase', () => {
   const gates = selectGates({ envelope: env([{ kind: 'full-suite', value: 'skip' }]), delta: DELTA, qualityCommands: [QCMDS[1]] });
-  const quality = gates.find((g) => g.gate === 'quality-completion-gate');
-  assert.equal(quality.selection, 'skip');
-  assert.equal(quality.reasonCodes.includes('all-commands-filtered'), true);
+  const quality = gates.find((g) => g.gate === 'completion-quality-gate');
+  assert.equal(quality.selection, 'run');
+  assert.deepEqual(quality.commandIds, []);
 });
 
-check('selectGates: browser directive skips agent-diff as not-run', () => {
+check('selectGates: browser directive keeps quality phase and marks risk phase skipped', () => {
   const gates = selectGates({ envelope: env([{ kind: 'browser-verification', value: 'skip' }]), delta: DELTA, qualityCommands: QCMDS });
-  const browser = gates.find((g) => g.gate === 'agent-diff-completion-gate');
-  assert.equal(browser.selection, 'skip');
-  assert.equal(browser.reasonCodes.includes('browser-skipped-not-run'), true);
+  const quality = gates.find((g) => g.gate === 'completion-quality-gate');
+  assert.equal(quality.selection, 'run');
+  assert.equal(quality.reasonCodes.includes('risk-phase-browser-skipped'), true);
 });
 
 check('selectGates: scope-lock makes dispositions report-only', () => {
   const gates = selectGates({ envelope: env([{ kind: 'scope-lock', value: 'on' }]), delta: DELTA, qualityCommands: QCMDS, applicability: () => true });
-  assert.equal(gates.find((g) => g.gate === 'quality-completion-gate').failureDisposition, 'report-only');
+  assert.equal(gates.find((g) => g.gate === 'completion-quality-gate').failureDisposition, 'report-only');
 });
 
 check('selectGates: uncertain delta skips heavy gates', () => {
@@ -342,7 +341,7 @@ check('buildDecision sanitizes unrelated findings (drops raw fields)', () => {
     repoRoot: 'E:/repo',
     delta: DELTA,
     gates: [{
-      gate: 'agent-diff-completion-gate', selection: 'run', failureDisposition: 'report-only', reasonCodes: ['task-relevant'], commandIds: [],
+      gate: 'completion-quality-gate', selection: 'run', failureDisposition: 'report-only', reasonCodes: ['task-relevant'], commandIds: [],
       unrelatedFindings: [{ title: 'oauth error', file: 'services/api/oauth.py', rawOutput: 'SECRET STACKTRACE', commandId: 'kai.api' }],
     }],
     now: '2026-01-01T00:00:00.000Z',
@@ -371,13 +370,13 @@ check('unchangedFailure detects a repeated blocker by fingerprint', () => {
   const dir = mkdtempSync(join(tmpdir(), 'tp-fp-'));
   try {
     const config = { ...DEFAULT_TASK_POLICY, stateDir: join(dir, '.state') };
-    const fp = failureFingerprint('quality-completion-gate', ['carops.config-contract'], 'fp1');
-    const decision = buildDecision({ taskId: 't1', repoRoot: 'E:/repo', delta: DELTA, gates: [{ gate: 'quality-completion-gate', selection: 'run', failureDisposition: 'block', reasonCodes: [], commandIds: ['carops.config-contract'], blocking: true }], now: '2026-01-01T00:00:00.000Z' });
+    const fp = failureFingerprint('completion-quality-gate', ['carops.config-contract'], 'fp1');
+    const decision = buildDecision({ taskId: 't1', repoRoot: 'E:/repo', delta: DELTA, gates: [{ gate: 'completion-quality-gate', selection: 'run', failureDisposition: 'block', reasonCodes: [], commandIds: ['carops.config-contract'], blocking: true }], now: '2026-01-01T00:00:00.000Z' });
     decision.gates[0].failureFingerprint = fp;
     appendDecision(config, 's1', 'E:/repo', decision);
-    const seen = unchangedFailure(config, 's1', 'E:/repo', 'quality-completion-gate', fp);
+    const seen = unchangedFailure(config, 's1', 'E:/repo', 'completion-quality-gate', fp);
     assert.equal(seen.seen, true);
-    const notSeen = unchangedFailure(config, 's1', 'E:/repo', 'quality-completion-gate', 'different');
+    const notSeen = unchangedFailure(config, 's1', 'E:/repo', 'completion-quality-gate', 'different');
     assert.equal(notSeen.seen, false);
   } finally {
     rmSync(dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 });

@@ -37,8 +37,8 @@ const DEFAULT_STEP_TIMEOUT_MS = 180000;
 
 const DEFAULT_CHAIN = [
   { id: 'memory-harvester', script: 'memory-harvester/harvest-stop.py', runtime: 'python' },
-  { id: 'quality-completion-gate', script: 'quality-completion-gate/quality-completion-gate.mjs', runtime: 'node' },
-  { id: 'agent-diff-completion-gate', script: 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', runtime: 'node' },
+  { id: 'prohibited-fraud-completion-gate', script: 'prohibited-fraud-completion-gate/prohibited-fraud-completion-gate.py', runtime: 'python' },
+  { id: 'completion-quality-gate', script: 'completion-quality-gate/completion-quality-gate.mjs', runtime: 'node' },
 ];
 
 export function readStdin() {
@@ -160,7 +160,7 @@ export function runStep(step, input, timeoutMs) {
   }
 }
 
-const COMPLETION_GATES = new Set(['quality-completion-gate', 'agent-diff-completion-gate']);
+const COMPLETION_GATES = new Set(['completion-quality-gate']);
 
 function slug(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -195,7 +195,7 @@ export function forbiddenClassesFromDirectives(directives) {
 
 function policyStatusLine(decisionGates, extra) {
   const parts = decisionGates.map((gate) => {
-    const short = gate.gate === 'quality-completion-gate' ? 'quality' : 'browser';
+    const short = gate.gate === 'completion-quality-gate' ? 'completion-quality' : gate.gate;
     return `${short}=${gate.selection}`;
   });
   if (extra) parts.push(extra);
@@ -217,18 +217,29 @@ function runIntegrityAudit(shared, sessionId) {
   return null;
 }
 
+// A line is dropped when it reads as an instruction to the agent rather than a
+// fact about the failure. Keeping factual lines (gate ran N, exit code, file:line)
+// while stripping steering prose prevents the Stop hook from re-acquiring the
+// "go do new work" behavior the policy exists to remove.
+const IMPERATIVE_LINE = /^(?:please\s+)?(?:read|run|re-?run|rerun|retry|fix|repair|remediate|load|use|do|don'?t|ensure|verify|check|follow|cite|stop|complete|address|resolve|update|add|confirm|review|call|invoke|open|launch|execute|include|provide|attach|enable|disable|skip|avoid|make)\b/i;
+const INSTRUCTION_PHRASE = /\b(?:must\s+(?:cite|run|follow|include|verify|fix|pass|provide|not)|do not skip|read and follow|verification commands?|completion message|load (?:the )?skill|use waza|waza-hunt|run\.json|before (?:completing|you complete|stop))\b/i;
+
 /** Sanitized, bounded, non-imperative excerpt of an executor failure reason. */
 export function sanitizeFailureDetail(reason, maxChars = 800) {
-  let text = redactSecrets(String(reason || '')).trim();
-  // Drop imperative remediation lines so the chain stays report-only in tone.
-  text = text
+  const text = redactSecrets(String(reason || ''));
+  const kept = text
     .split(/\r?\n/)
-    .filter((line) => !/\b(?:re-?run|fix|remediate|load (?:the )?skill|use waza|you should|please run)\b/i.test(line))
+    .filter((raw) => {
+      const line = raw.trim();
+      if (!line) return false;
+      const body = line.replace(/^[-*\d.)\]\s]+/, ''); // strip list markers
+      if (IMPERATIVE_LINE.test(body)) return false;
+      if (INSTRUCTION_PHRASE.test(line)) return false;
+      return true;
+    })
     .join('\n')
-    .replace(/\n{3,}/g, '\n\n')
     .trim();
-  if (text.length > maxChars) text = `${text.slice(0, maxChars).trimEnd()}…`;
-  return text;
+  return kept.length > maxChars ? `${kept.slice(0, maxChars).trimEnd()}…` : kept;
 }
 
 /** Neutral, factual failure summary: gate + command ids + sanitized detail. */

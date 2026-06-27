@@ -10,6 +10,85 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-27 - Merge quality and risk Stop gates
+
+- Added `completion-quality-gate/` as the single Stop-chain gate for required
+  quality checks plus implementation-risk/live-verification policy, replacing
+  separate `quality-completion-gate` and `agent-diff-completion-gate` Stop-chain
+  entries.
+- Changed `stop-completion-chain` and `task-policy` to select and run only
+  `completion-quality-gate` for the old quality/risk responsibilities while
+  preserving the old quality and agent-diff scripts as internal phase executors.
+- Changed config validation to require `completion-quality-gate`, reject the old
+  quality/agent-diff hooks as direct Stop-chain entries, and ensure the merged
+  gate remains fail-closed with expected phase scripts and timeout ordering.
+- Changed hooks verification manifest and tests to cover the merged gate,
+  updated Stop policy/unit tests for the new single-gate status, and regenerated
+  the derived config schema.
+
+### 2026-06-27 - Prohibited fraudulent implementation methods Stop gate
+
+- Added `prohibited-fraud-completion-gate/` as the canonical Stop gate for Jon's
+  prohibited fraudulent implementation methods rule. The gate requires the
+  configured governance document to exist in JWC, KC, TFO, kai-agent, and DBASE,
+  verifies every document contains the prohibited-class phrases, and scans
+  current implementation diffs for deterministic fraud/bypass patterns before
+  completion.
+- Changed `stop-completion-chain` to run
+  `prohibited-fraud-completion-gate` before quality and agent-diff gates, while
+  keeping `memory-harvester` as the fail-open pre-step.
+- Changed `_core/config-model.mjs` and config-model tests so the prohibited
+  fraud gate is required, fail-closed, mapped to all five governance documents,
+  and present in the Stop chain.
+- Changed the hooks verify manifest to classify the new gate directory, run its
+  focused self-test, and include it in Python syntax coverage.
+
+### 2026-06-24 - Inject no-fabrication family policy
+
+Adds Jon's canonical no-fabrication rule to the per-prompt protocol injection so
+Codex, Claude, Cursor, and related workers receive it as active operating
+context. The policy is semantic, not keyword-based: UI, route, API, or
+verification behavior that makes unavailable or unproven functionality look real
+is forbidden across kai-chattr/KC, JWC, TFO, DBASE, and related repos.
+
+### 2026-06-22 - Require saved implementation plan artifacts
+
+Adds a global injected worker rule requiring implementation plans to be saved as
+durable file artifacts with exact hashes before evaluation or execution. This
+prevents terminal-only plans from bypassing the artifact needed by auditors and
+watchdogs: auditors evaluate a specific saved plan hash, and watchdogs monitor
+implementation against the approved hash baseline.
+
+### 2026-06-21 - Stop task-policy hardening pass 2 (re-review findings)
+
+Addresses three re-review findings against the post-review hardening.
+
+- Fixed (F1, read-only git): `task-policy-guard.mjs` removed the mutating-capable
+  git subcommands (`branch`, `tag`, `remote`, `config`) from the read-only git
+  allowlist and now denies any git segment with `--output` (file write). Verified
+  gaps `git branch X` / `git tag v1` / `git remote add` / `git config k v` /
+  `git diff --output` are now denied while read-only; `git status|log|diff|show`
+  still allowed. (+2 guard tests, 23 total.)
+- Fixed (F3, Stop failure sanitization): `stop-completion-chain.mjs`
+  `sanitizeFailureDetail` now drops imperative-shaped lines and instruction
+  phrases ("Read and follow…", "Run the verification commands…", "Do not skip…",
+  "Completion message must cite…", "run.json", "load skill", "waza") while keeping
+  factual detail (gate ran N, exit code, file:line). Regression test added
+  (integration suite now 17 named scenarios).
+- Fixed (F2 / IMPL-003): `examples/cursor/hooks.full-stack.fragment.json` now
+  includes the `task-policy-guard` PreToolUse entry, matching the live wiring.
+- No change (scoped out): `examples/cursor/hooks.fragment.json` and
+  `examples/claude/stop-hooks.fragment.json` are Stop-only fragments (no
+  PreToolUse, no task-mode-gate/envelope source); a PreToolUse guard has nothing
+  to enforce there and the plan intentionally keeps them Stop-only. Full policy
+  wiring is shown by `hooks.full-stack.fragment.json`,
+  `examples/codex/task-policy-hooks.fragment.toml`, and the live configs.
+- Plan decision: plan v1.1 unchanged — F2 was already in Task 5; F1/F3 are
+  hardening beyond the plan's contract. No locked decision altered.
+- Verification: full node chain green (task-policy core 29 + guard 23, task-mode,
+  quality + verification-integrity + config-model, agent-diff, stop-chain unit +
+  17/17 integration, hook-dev-tools, validate-runtime-hooks).
+
 ### 2026-06-21 - Stop task-policy hardening (post-review)
 
 Addresses findings from the implementation + blind reviews of the task-policy

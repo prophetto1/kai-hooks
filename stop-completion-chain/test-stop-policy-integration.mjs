@@ -29,6 +29,7 @@ import {
   HARD_NON_REDIRECT,
   buildQualityCommands,
   forbiddenClassesFromDirectives,
+  sanitizeFailureDetail,
 } from './stop-completion-chain.mjs';
 import { decideGuard } from '../task-policy/task-policy-guard.mjs';
 import { gitRoot as qGitRoot, normalizeAbsolute } from '../quality-completion-gate/quality-gate-core.mjs';
@@ -174,21 +175,22 @@ test('read-only-skips-all-heavy-completion-gates', () => {
     writeFileSync(join(env.repo, 'a.ts'), 'a'); commitAll(env.repo, 'init');
     const root = canonicalRoot(env.repo);
     writeManifest(env, root, { web: { paths: [{ prefixes: ['apps/web/'] }], commands: [{ label: 'q', command: PASS_CMD }] } });
-    writeConfig(env, ['quality-completion-gate']);
+    writeConfig(env, ['completion-quality-gate']);
     writeEnvelope(env, root, 's1', baseEnvelope(root, 's1', { userDirectives: mergeDirectives([], parseDirectives('read-only')), baseline: captureBaseline(env.repo) }));
     mkdirSync(join(env.repo, 'apps', 'web'), { recursive: true });
     writeFileSync(join(env.repo, 'apps', 'web', 'x.ts'), 'dirty');
     const out = runChain(env, env.repo, 's1');
     assert.equal(out.decision, undefined, 'read-only must not block');
-    assert.ok(/quality=skip/.test(out.systemMessage || ''), out.systemMessage);
+    assert.ok(/completion-quality=skip/.test(out.systemMessage || ''), out.systemMessage);
   } finally { rmSync(env.dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 });
 
 // 2
 test('bypass-playwright-skips-browser-but-keeps-relevant-quality', () => {
   const gates = selectGates({ envelope: envWith(parseDirectives('do not run Playwright')), delta: DELTA, qualityCommands: QCMDS });
-  assert.equal(gates.find((g) => g.gate === 'agent-diff-completion-gate').selection, 'skip');
-  assert.equal(gates.find((g) => g.gate === 'quality-completion-gate').selection, 'run');
+  const gate = gates.find((g) => g.gate === 'completion-quality-gate');
+  assert.equal(gate.selection, 'run');
+  assert.equal(gate.reasonCodes.includes('risk-phase-browser-skipped'), true);
 });
 
 // 3
@@ -201,7 +203,7 @@ test('sidebar-layout-task-reports-oauth-api-findings-only', () => {
 // 4
 test('selected-ui-route-allows-browser-gate', () => {
   const gates = selectGates({ envelope: envWith([], { selectedRoutes: ['/dashboard'] }), delta: DELTA, qualityCommands: QCMDS, applicability: () => true });
-  assert.equal(gates.find((g) => g.gate === 'agent-diff-completion-gate').selection, 'run');
+  assert.equal(gates.find((g) => g.gate === 'completion-quality-gate').selection, 'run');
 });
 
 // 5
@@ -211,18 +213,18 @@ test('no-task-relative-delta-skips-heavy-gates', () => {
     writeFileSync(join(env.repo, 'a.ts'), 'a'); commitAll(env.repo, 'init');
     const root = canonicalRoot(env.repo);
     writeManifest(env, root, { web: { paths: [{ prefixes: [''] }], commands: [{ label: 'q', command: PASS_CMD }] } });
-    writeConfig(env, ['quality-completion-gate']);
+    writeConfig(env, ['completion-quality-gate']);
     writeEnvelope(env, root, 's5', baseEnvelope(root, 's5', { baseline: captureBaseline(env.repo) }));
     const out = runChain(env, env.repo, 's5');
     assert.equal(out.decision, undefined);
-    assert.ok(/quality=skip/.test(out.systemMessage || ''), out.systemMessage);
+    assert.ok(/completion-quality=skip/.test(out.systemMessage || ''), out.systemMessage);
   } finally { rmSync(env.dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 });
 
 // 6
 test('carops-config-only-selects-config-contract-only', () => {
   const gates = selectGates({ envelope: envWith([]), delta: { ok: true, uncertain: false, changedFiles: ['check.config.ts'], fingerprint: 'fp-c' }, qualityCommands: CAROPS_CMDS, applicability: () => true });
-  const quality = gates.find((g) => g.gate === 'quality-completion-gate');
+  const quality = gates.find((g) => g.gate === 'completion-quality-gate');
   assert.equal(quality.selection, 'run');
   assert.deepEqual(quality.commandIds, ['carops.config-contract']);
 });
@@ -239,7 +241,7 @@ test('unchanged-blocker-is-not-rerun', () => {
     writeFileSync(join(env.repo, 'app', 'feature.ts'), 'one'); commitAll(env.repo, 'task');
     const countPath = join(env.dir, 'runcount.txt');
     writeManifest(env, root, { code: { paths: [{ prefixes: ['app/'] }], commands: [{ label: 'q', command: failWithCount(countPath) }] } });
-    writeConfig(env, ['quality-completion-gate']);
+    writeConfig(env, ['completion-quality-gate']);
     writeEnvelope(env, root, 's7', baseEnvelope(root, 's7', { baseline }));
     const first = runChain(env, env.repo, 's7');
     assert.equal(first.decision, 'block', 'first run blocks on failing command: ' + JSON.stringify(first));
@@ -289,9 +291,9 @@ test('committed-during-task-files-remain-task-changes', () => {
     writeFileSync(join(env.repo, 'feature.ts'), 'new'); commitAll(env.repo, 'task');
     const delta = taskRelativeChanges(env.repo, baseline);
     assert.ok(delta.changedFiles.includes('feature.ts'));
-    // chain selects quality=run for a non-empty delta
+    // chain selects completion-quality=run for a non-empty delta
     const gates = selectGates({ envelope: envWith([]), delta, qualityCommands: QCMDS, applicability: () => true });
-    assert.equal(gates.find((g) => g.gate === 'quality-completion-gate').selection, 'run');
+    assert.equal(gates.find((g) => g.gate === 'completion-quality-gate').selection, 'run');
   } finally { rmSync(env.dir, { recursive: true, force: true, maxRetries: 50, retryDelay: 100 }); }
 });
 
@@ -302,7 +304,7 @@ test('missing-or-stale-envelope-runs-no-heavy-gate', () => {
     writeFileSync(join(env.repo, 'a.ts'), 'a'); commitAll(env.repo, 'init');
     const root = canonicalRoot(env.repo);
     writeManifest(env, root, { web: { paths: [{ prefixes: [''] }], commands: [{ label: 'q', command: PASS_CMD }] } });
-    writeConfig(env, ['quality-completion-gate']);
+    writeConfig(env, ['completion-quality-gate']);
     // no envelope written
     const out = runChain(env, env.repo, 'no-envelope');
     assert.equal(out.decision, undefined);
@@ -336,7 +338,7 @@ con.commit();con.close()
     config.shared.paths.qualityVerifyManifest = env.manifestPath;
     config.shared.paths.hooksDb = hooksDb;
     config.shared.taskPolicy = { ...(config.shared.taskPolicy || {}), stateDir: env.stateDir };
-    config.scripts.find((s) => s.id === 'stop-completion-chain').settings = { chain: ['quality-completion-gate'] };
+    config.scripts.find((s) => s.id === 'stop-completion-chain').settings = { chain: ['completion-quality-gate'] };
     writeFileSync(env.configPath, JSON.stringify(config, null, 2));
     // even with a read-only envelope (which would skip gates), integrity still blocks
     writeEnvelope(env, root, 's14', baseEnvelope(root, 's14', { userDirectives: mergeDirectives([], parseDirectives('read-only')), baseline: captureBaseline(env.repo) }));
@@ -366,6 +368,22 @@ test('report-only-output-has-no-remediation-directive', () => {
   assert.ok(!/\b(fix|rerun|remediate|run waza|load skill)\b/i.test(msg.replace('rerun, or remediated', '')), 'no imperative remediation step');
   // forbiddenClassesFromDirectives is the chain mechanism that keeps browser/full-suite out
   assert.deepEqual(forbiddenClassesFromDirectives(parseDirectives('do not run Playwright')), ['browser']);
+});
+
+// 17 (post-review hardening): Stop failure detail strips instruction-shaped text
+test('stop-failure-detail-strips-instruction-text', () => {
+  const raw = [
+    'completion-quality-gate quality phase failed.',
+    'quality-completion-gate ran 2 command(s) and 1 failed.',
+    'npx playwright test — exit 1',
+    'Read and follow the verification-before-completion skill.',
+    'Run the verification commands before completing.',
+    'Do not skip the browser check.',
+    'Completion message must cite the run.json path.',
+  ].join('\n');
+  const out = sanitizeFailureDetail(raw);
+  assert.ok(/ran 2 command/.test(out) && /exit 1/.test(out), 'keeps factual detail: ' + out);
+  assert.ok(!/read and follow|verification commands|do not skip|completion message|run\.json/i.test(out), 'strips instruction text: ' + out);
 });
 
 /* ---------- report ---------- */

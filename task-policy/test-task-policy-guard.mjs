@@ -59,6 +59,18 @@ check('read-only denies unknown/mutating shell commands', () => {
   }
 });
 
+check('read-only denies mutating git subcommands and --output', () => {
+  for (const cmd of ['git branch newbranch', 'git tag v1', 'git remote add origin https://x', 'git config user.name Jon', 'git diff --output out.patch', 'git -C E:/repo diff --output=p.patch']) {
+    expectDeny(decideGuard({ toolName: 'Bash', toolInput: { command: cmd }, envelope: envWith(RO), envelopeOk: true, config }), 'read-only-shell');
+  }
+});
+
+check('read-only still allows read-only git (status/log/diff/show)', () => {
+  for (const cmd of ['git status', 'git log --oneline -5', 'git diff', 'git show HEAD', 'git -C E:/repo diff']) {
+    expectAllow(decideGuard({ toolName: 'Bash', toolInput: { command: cmd }, envelope: envWith(RO), envelopeOk: true, config }));
+  }
+});
+
 check('read-only denies compound command with an unsafe segment', () => {
   expectDeny(decideGuard({ toolName: 'Bash', toolInput: { command: 'git status && rm -rf x' }, envelope: envWith(RO), envelopeOk: true, config }), 'read-only-shell');
 });
@@ -79,6 +91,9 @@ check('shellIsReadOnlySafe unit cases', () => {
   assert.equal(shellIsReadOnlySafe('ls && cat f'), true);
   assert.equal(shellIsReadOnlySafe('ls && rm f'), false);
   assert.equal(shellIsReadOnlySafe('node x.mjs'), false);
+  assert.equal(shellIsReadOnlySafe('git branch x'), false);
+  assert.equal(shellIsReadOnlySafe('git config user.name Jon'), false);
+  assert.equal(shellIsReadOnlySafe('git diff --output p.patch'), false);
 });
 
 /* --- browser / full-suite --- */

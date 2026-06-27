@@ -19,6 +19,16 @@ const hooks = [
     script: { path: 'agent-diff-completion-gate/agent-diff-completion-gate.mjs', runtime: 'node' },
   },
   {
+    id: 'completion-quality-gate',
+    enabled: true,
+    script: { path: 'completion-quality-gate/completion-quality-gate.mjs', runtime: 'node' },
+  },
+  {
+    id: 'prohibited-fraud-completion-gate',
+    enabled: true,
+    script: { path: 'prohibited-fraud-completion-gate/prohibited-fraud-completion-gate.py', runtime: 'python' },
+  },
+  {
     id: 'quality-completion-gate',
     enabled: true,
     script: { path: 'quality-completion-gate/quality-completion-gate.mjs', runtime: 'node' },
@@ -31,7 +41,7 @@ const config = {
     {
       id: 'stop-completion-chain',
       settings: {
-        chain: ['memory-harvester', 'agent-diff-completion-gate', 'quality-completion-gate'],
+        chain: ['memory-harvester', 'prohibited-fraud-completion-gate', 'completion-quality-gate'],
       },
     },
   ],
@@ -39,16 +49,16 @@ const config = {
 
 assert.deepEqual(
   configuredChain(config).map((step) => step.id),
-  ['memory-harvester', 'agent-diff-completion-gate', 'quality-completion-gate'],
+  ['memory-harvester', 'prohibited-fraud-completion-gate', 'completion-quality-gate'],
   'stop-completion-chain must honor scripts[id=stop-completion-chain].settings.chain order',
 );
 assert.equal(configuredChain(config)[0].failOpenPreStep, true, 'memory-harvester remains fail-open pre-step');
 
 const disabled = structuredClone(config);
-disabled.hooks.find((hook) => hook.id === 'agent-diff-completion-gate').enabled = false;
+disabled.hooks.find((hook) => hook.id === 'completion-quality-gate').enabled = false;
 assert.deepEqual(
   configuredChain(disabled).map((step) => step.id),
-  ['memory-harvester', 'quality-completion-gate'],
+  ['memory-harvester', 'prohibited-fraud-completion-gate'],
   'disabled hooks are omitted from the configured stop chain',
 );
 

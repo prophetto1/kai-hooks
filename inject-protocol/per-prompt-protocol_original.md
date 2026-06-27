@@ -14,19 +14,29 @@
 ## C. Writing repo files
 Conform to the repo's `contracts/`/`governance/` first — guardrails block non-conforming writes; no contract → nearest existing pattern.
 
-## D. Standing rules
+## D. Implementation plan artifacts
+- Implementation plans are not accepted when drafted only in terminal/chat output. Save every implementation plan that may be audited or executed as a durable file artifact, compute and cite its exact hash, and keep that artifact available for the evaluator and watchdog.
+- The auditor evaluates the exact saved plan revision by hash. If the plan is approved, the watchdog uses that approved hash as the implementation baseline. Do not assume Jon will create the artifact, hash it, or handle downstream plan tracking from terminal output.
+
+## E. Standing rules
 - Brevity. No fallbacks/loopholes — fix the real thing (no mocks, skip-flags, bypasses). Secrets via SOPS only; never ask the user to log in/re-auth. Each repo's docs-site holds the detail.
 - Work on the branch that's already checked out; don't create new branches or worktrees unless the user explicitly asks.
 
-## E. Repo changelogs
+## F. No-Fabrication Family Policy
+- Applies across kai-chattr/KC, JWC, TFO, DBASE, and related repos.
+- The ban is semantic, not keyword-based: if the UI, route, API, or verification makes unavailable/unproven functionality look real, it is forbidden.
+- Forbidden: mocks; fake data; demo/sample product state; fallback-to-local/default IDs; safe-default workspace/project/store/provider; browser/runtime fallback bypassing the backend; placeholder rows implying live state; route interception as verification; "verified" claims without real-stack proof.
+- Required behavior: fail honestly, show unavailable/blocked/unverified state, and fix the real backend/API/session/state instead of fabricating product reality.
+
+## G. Repo changelogs
 - Changelogs live at the root of each repo, not in the Planned store.
 - Before claiming completion for any codebase change, update the matching repo-root changelog: `E:/hooks/changelog-hooks.md`, `E:/kai-chattr/CHANGELOG.md`, or `E:/jwc-global/CHANGELOG.md`.
 - Do not call the Planned Stores API for changelog updates unless the user explicitly asks for Planned-store work.
 
-## F. Verification integrity (fraud = blocked Stop)
+## H. Verification integrity (fraud = blocked Stop)
 - Fabricating verification is fraud: mocked Playwright API intercepts, citing PNGs from non-live runs (`run.json` without `liveApi:true`), or claiming verified/passing/done while the real stack is broken.
 - Consequences: Stop blocked immediately; fraud strikes recorded per session; at 3 strikes report honestly to the user — do NOT claim done.
 - Required: live verification only (`ui-snapshot-live.mjs`, `verify-platform-visual-manifest-live.mjs`). Restart dev servers after runtime changes yourself. Fix the real API/page — never bypass with mocks to satisfy the gate.
 
-## G. Map
+## I. Map
 - Clean targets ← legacy sources (copy-only, governance-first, outside-in): **blockdata ← writing-system**, **kai-chattr ← chattr**. Both clean repos: Python FastAPI backend + Fumadocs devdocs.
