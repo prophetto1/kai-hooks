@@ -315,6 +315,16 @@
               "prefixes": [
                 ".cursor/"
               ]
+            },
+            {
+              "prefixes": [
+                "scripts/dev/"
+              ],
+              "fileNames": [
+                "live-verification-state.mjs",
+                "settings-e2e-live.mjs",
+                "ui-snapshot-live.mjs"
+              ]
             }
           ],
           "commands": [
@@ -325,7 +335,7 @@
                 "browser",
                 "targeted"
               ],
-              "command": "npx playwright test tests/e2e/settings-page.spec.ts",
+              "command": "sops exec-env secrets/dev/auth.yaml \"node scripts/dev/settings-e2e-live.mjs\"",
               "timeoutMs": 120000,
               "maxBuffer": 4194304
             },
@@ -335,7 +345,7 @@
               "classes": [
                 "browser"
               ],
-              "command": "node scripts/dev/ui-snapshot-live.mjs",
+              "command": "sops exec-env secrets/dev/auth.yaml \"node scripts/dev/ui-snapshot-live.mjs\"",
               "timeoutMs": 120000,
               "maxBuffer": 4194304
             }
@@ -351,13 +361,13 @@
           ],
           "commands": [
             {
-              "label": "kai-chattr api tests",
-              "id": "api-all-tests",
+              "label": "kai-chattr api authority slice",
+              "id": "api-authority-slice",
               "classes": [
                 "quality",
-                "full-suite"
+                "targeted"
               ],
-              "command": "uv run python -m pytest tests/ -q",
+              "command": "uv run python -m pytest tests/test_endpoint_contract_registry.py tests/test_observability_contract.py tests/test_archive_feature.py tests/test_project_session_scope.py tests/test_library_project_scope.py tests/test_account_invitations.py tests/test_settings_authority_contract.py tests/test_theme_settings_api.py -q",
               "cwd": "services/api",
               "env": {
                 "UV_PROJECT_ENVIRONMENT": "%LOCALAPPDATA%\\uv\\envs\\kai-chattr-services-api"

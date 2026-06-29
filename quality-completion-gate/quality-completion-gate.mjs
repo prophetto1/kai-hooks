@@ -54,7 +54,9 @@ const REFERENCE_REPO_SEGMENTS = new Set([
 
 function formatFailure(result) {
   const output = result.output ? `\n${result.output}` : '';
-  return `${result.label} failed (${result.ms}ms): ${result.command}${output}`;
+  const state = result.blocked ? 'blocked' : 'failed';
+  const reason = result.blockedReason ? `\nBlocked: ${result.blockedReason}` : '';
+  return `${result.label} ${state} (${result.ms}ms): ${result.command}${reason}${output}`;
 }
 
 function isStopContinuation(input) {
@@ -502,11 +504,17 @@ function evaluate(input) {
     }
     const failures = results.filter((result) => !result.ok);
     if (failures.length) {
+      const blockedCount = failures.filter((result) => result.blocked).length;
+      const failedCount = failures.length - blockedCount;
+      const failureSummary = [
+        blockedCount ? `${blockedCount} blocked` : '',
+        failedCount ? `${failedCount} failed` : '',
+      ].filter(Boolean).join(' and ');
       return block(
         runtime,
         input,
         repoRoot,
-        `Quality completion gate ran ${results.length} manifest command(s) for ${domainNames.join(', ')} and ${failures.length} failed.\n` +
+        `Quality completion gate ran ${results.length} manifest command(s) for ${domainNames.join(', ')} and ${failureSummary}.\n` +
           failures.map(formatFailure).join('\n\n'),
         {
           kind: 'command-failures',
@@ -515,6 +523,9 @@ function evaluate(input) {
             command: failure.command,
             domain: failure.domain,
             status: failure.status,
+            verificationStatus: failure.verificationStatus,
+            blocked: failure.blocked === true,
+            blockedReason: failure.blockedReason,
             output: failure.output
           }))
         },

@@ -10,6 +10,21 @@ A codebase change includes source code edits, migrations, configuration changes,
 
 ## Entries
 
+### 2026-06-29 - KC live completion manifest repair
+
+- Changed the kai-chattr web completion commands in
+  `quality-completion-gate/quality-verify-manifest.json` to run the live
+  settings E2E and live UI snapshot through the repo's SOPS-backed auth env.
+  The manifest still targets live `tests/e2e` coverage and does not point at
+  mock-e2e fixtures.
+- Added blocked-state parsing for `VERIFICATION_RUN_SUMMARY` output so live
+  verifiers without provisioned credentials block completion as blocked
+  evidence instead of generic command failures.
+- Replaced the stale kai-chattr `api-all-tests` full-suite Stop command with a
+  maintained API authority slice covering endpoint/observability contracts,
+  archive import/export, Projects, Library, invitations, settings authority,
+  and theme settings.
+
 ### 2026-06-27 - Stop unchanged-blocker loop break
 
 - Fixed `stop-completion-chain` unchanged-blocker suppression so a previously

@@ -321,6 +321,26 @@ function testRunVerifyCommandHonorsCommandEnv() {
   });
 }
 
+function testRunVerifyCommandReportsBlockedSummary() {
+  withRepo((repo) => {
+    const result = runVerifyCommand(
+      repo,
+      {
+        label: 'blocked summary command',
+        command:
+          'node -e "console.log(\'VERIFICATION_RUN_SUMMARY:{\\\"status\\\":\\\"blocked\\\",\\\"blockedReason\\\":\\\"missing live account\\\"}\'); process.exit(2)"',
+        timeoutMs: 1000
+      },
+      1000
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.blocked, true);
+    assert.equal(result.verificationStatus, 'blocked');
+    assert.equal(result.blockedReason, 'missing live account');
+  });
+}
+
 async function testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwice() {
   await withRepoAsync(async (repo) => {
     const root = mkdtempSync(join(tmpdir(), 'quality-gate-single-flight-'));
@@ -445,6 +465,7 @@ testStopContinuationRerunsVerificationAndLoopsOut();
 testStopBudgetLimitsSlowCommands();
 testStateWriteFailureStillBlocks();
 testRunVerifyCommandHonorsCommandEnv();
+testRunVerifyCommandReportsBlockedSummary();
 await testConcurrentQualityGateSkipsWithoutBlockingOrRunningCommandsTwice();
 testDeadOwnerSingleFlightLockIsCleared();
 testNestedReferenceRepoUnderManagedRepoIsIgnored();

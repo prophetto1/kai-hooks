@@ -303,6 +303,24 @@ export function runVerifyCommand(repoRoot, command, defaultTimeoutMs, remainingB
       env: commandEnvironment(command),
       stdio: ['ignore', 'pipe', 'pipe']
     });
+    const outputText = String(output || '').slice(-4000);
+    const summary = verificationRunSummary(outputText);
+    const verificationStatus = verificationSummaryStatus(summary);
+    if (verificationStatus === 'blocked' || verificationStatus === 'failed') {
+      return {
+        ok: false,
+        blocked: verificationStatus === 'blocked',
+        label: command.label || command.command,
+        domain: command.domain,
+        command: command.command,
+        cwd,
+        ms: Date.now() - startedAt,
+        status: verificationStatus === 'blocked' ? 2 : 1,
+        verificationStatus,
+        blockedReason: blockedReasonFromSummary(summary),
+        output: outputText
+      };
+    }
     return {
       ok: true,
       label: command.label || command.command,
@@ -310,22 +328,50 @@ export function runVerifyCommand(repoRoot, command, defaultTimeoutMs, remainingB
       command: command.command,
       cwd,
       ms: Date.now() - startedAt,
-      output: String(output || '').slice(-4000)
+      verificationStatus,
+      output: outputText
     };
   } catch (error) {
+    const output = (
+      budgetLimited
+        ? `Total Stop budget exhausted while running this command.\n${error.stdout || ''}${error.stderr || ''}`
+        : `${error.stdout || ''}${error.stderr || ''}`
+    ).slice(-4000) || error.message;
+    const summary = verificationRunSummary(output);
+    const verificationStatus = verificationSummaryStatus(summary);
     return {
       ok: false,
+      blocked: verificationStatus === 'blocked',
       label: command.label || command.command,
       domain: command.domain,
       command: command.command,
       cwd,
       ms: Date.now() - startedAt,
       status: error.status ?? null,
-      output: (
-        budgetLimited
-          ? `Total Stop budget exhausted while running this command.\n${error.stdout || ''}${error.stderr || ''}`
-          : `${error.stdout || ''}${error.stderr || ''}`
-      ).slice(-4000) || error.message
+      verificationStatus,
+      blockedReason: blockedReasonFromSummary(summary),
+      output
     };
   }
+}
+
+function verificationRunSummary(output) {
+  let summary = null;
+  for (const match of String(output || '').matchAll(/^VERIFICATION_RUN_SUMMARY:(.+)$/gm)) {
+    try {
+      summary = JSON.parse(match[1]);
+    } catch {
+      // Leave malformed summaries in command output for normal failure reporting.
+    }
+  }
+  return summary;
+}
+
+function verificationSummaryStatus(summary) {
+  const status = String(summary?.status || summary?.result || '').toLowerCase();
+  return ['passed', 'blocked', 'failed'].includes(status) ? status : null;
+}
+
+function blockedReasonFromSummary(summary) {
+  return summary?.blockedReason || summary?.reason || null;
 }
